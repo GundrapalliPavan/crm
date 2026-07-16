@@ -1,0 +1,13 @@
+// This file defines the Prisma generator and datasource only.
+// Models are intentionally omitted here - they will be added once the
+// ER Diagram (docs/sds/volume-4-data) is implemented, per the project's
+// documented implementation order.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
