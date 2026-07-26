@@ -5,28 +5,29 @@ Local development infrastructure via Docker Compose.
 ## Usage
 
 ```bash
-cp infrastructure/.env.example infrastructure/.env
-pnpm docker:up    # postgres + redis + backend + frontend
+cp .env.example .env
+pnpm docker:up      # postgres
 pnpm docker:down
 ```
 
-For local development without full containerization, run only the datastores:
+Application processes run directly on the host, not in containers, for local development:
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml up -d postgres redis
-pnpm dev:backend
-pnpm dev:frontend
+pnpm dev:api
+pnpm dev:web
 ```
 
 ## Structure
 
 ```
-docker-compose.yml       # postgres, redis, backend, frontend services
-docker/backend/Dockerfile
-docker/frontend/Dockerfile
+docker-compose.yml   # postgres (at repo root, alongside .env)
+scripts/              # operational scripts, added as needed
+deployment/            # GCP deployment architecture, added when Phase 0 Step 13 begins
 ```
 
-Production deployment topology (orchestration platform, TLS termination, secrets
-management, autoscaling) is out of scope for this foundation and will be defined
-once Volume 3 (Technical Architecture / Deployment Architecture) is authored -
-see the gap noted in [`docs/README.md`](../docs/README.md).
+Redis and application container images are intentionally not configured yet - they are introduced
+when the queue infrastructure and deployment steps actually need them, per `PROJECT_SETUP.md`
+sections 23 ("Avoid Premature Infrastructure") and 31 ("Background Jobs").
+
+Production deployment topology (Cloud Run, Cloud SQL, Secret Manager, TLS termination) is defined in
+`PROJECT_SETUP.md` section 56 and will be implemented in Phase 0 Step 13, not repository initialization.

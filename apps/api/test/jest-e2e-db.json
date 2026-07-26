@@ -1,0 +1,12 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-live-spec.ts$",
+  "globalSetup": "<rootDir>/test/database/db-global-setup.ts",
+  "setupFiles": ["<rootDir>/test/database/point-app-at-test-db.ts"],
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "maxWorkers": 1
+}

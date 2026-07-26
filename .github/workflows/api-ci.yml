@@ -1,0 +1,32 @@
+name: API CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @crm/api lint
+      - run: pnpm --filter @crm/api typecheck
+      - run: pnpm --filter @crm/api build
+      - run: pnpm --filter @crm/api test

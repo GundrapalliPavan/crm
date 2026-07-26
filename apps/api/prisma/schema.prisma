@@ -1,0 +1,1654 @@
+// Electrical Distribution CRM - database schema
+//
+// Implements DATABASE.md. Physical names are snake_case (@map / @@map); Prisma
+// model and field names follow Prisma conventions, as permitted by
+// DATABASE.md section 4.
+//
+// Scoping: single-organization model. There is deliberately no `organizations`
+// table and no `organization_id` column, per DATABASE.md sections 4, 157 and
+// 158 ("Single-Organization Initial Model"). This contradicts
+// PROJECT_SETUP.md section 14; the conflict was raised and the DATABASE.md
+// model was chosen. UUID keys keep a future migration open.
+//
+// Numeric precision (DATABASE.md section 10 requires NUMERIC but does not fix a
+// precision, so these are project decisions applied consistently by category):
+//   amounts      Decimal(18, 2)  totals, tax, discounts, payments, allocations
+//   unit rates   Decimal(18, 4)  unit prices and costs, which need sub-paisa
+//                                granularity for per-metre goods such as wire
+//   quantities   Decimal(18, 3)  fractional units (DATABASE.md section 119)
+//   percentages  Decimal(5, 2)   tax and discount rates
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums - controlled status values (DATABASE.md section 14)
+//
+// Native PostgreSQL enums are used so invalid values are rejected by the
+// database, not only by application code. Values that the module documents call
+// "configurable" (lead sources, roles) are reference tables instead.
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  active
+  inactive
+  suspended
+
+  @@map("user_status")
+}
+
+/// Lead pipeline stage (CRM.md section 8).
+enum LeadStatus {
+  new
+  attempted_contact
+  connected
+  qualified
+  opportunity
+  converted
+  lost
+  unqualified
+  duplicate
+
+  @@map("lead_status")
+}
+
+enum LeadPriority {
+  low
+  medium
+  high
+
+  @@map("lead_priority")
+}
+
+/// CRM.md section 28. `overdue` is intentionally absent: DATABASE.md section 30
+/// derives it from scheduled_at plus completion state rather than persisting it.
+enum FollowUpStatus {
+  pending
+  completed
+  cancelled
+
+  @@map("follow_up_status")
+}
+
+enum FollowUpType {
+  call
+  meeting
+  visit
+  email
+  whatsapp
+  other
+
+  @@map("follow_up_type")
+}
+
+/// DATABASE.md section 28.
+enum LeadActivityType {
+  created
+  assigned
+  status_changed
+  call
+  meeting
+  note
+  follow_up
+  quotation_created
+  converted
+
+  @@map("lead_activity_type")
+}
+
+enum CompanyType {
+  dealer
+  distributor
+  retailer
+  contractor
+  builder
+  business_customer
+  other
+
+  @@map("company_type")
+}
+
+enum AddressType {
+  billing
+  shipping
+  office
+  warehouse
+  other
+
+  @@map("address_type")
+}
+
+/// SALES.md section 28.
+enum QuotationStatus {
+  draft
+  approval_pending
+  approved
+  sent
+  negotiation
+  accepted
+  rejected
+  expired
+  cancelled
+
+  @@map("quotation_status")
+}
+
+/// SALES.md section 51.
+enum SalesOrderStatus {
+  draft
+  confirmation_pending
+  confirmed
+  processing
+  partially_fulfilled
+  fulfilled
+  cancelled
+
+  @@map("sales_order_status")
+}
+
+/// PURCHASE.md section 42.
+enum PurchaseOrderStatus {
+  draft
+  approval_pending
+  approved
+  sent
+  supplier_confirmed
+  partially_received
+  received
+  closed
+  cancelled
+
+  @@map("purchase_order_status")
+}
+
+/// BILLING.md section 12. `overdue` is derived from due_date and outstanding
+/// amount rather than stored (BILLING.md section 12).
+enum InvoiceStatus {
+  draft
+  issued
+  partially_paid
+  paid
+  cancelled
+  credited
+
+  @@map("invoice_status")
+}
+
+enum PaymentStatus {
+  recorded
+  cleared
+  bounced
+  cancelled
+
+  @@map("payment_status")
+}
+
+/// BILLING.md section 31.
+enum PaymentMethod {
+  bank_transfer
+  upi
+  cheque
+  cash
+  card
+  payment_gateway
+  other
+
+  @@map("payment_method")
+}
+
+/// DATABASE.md section 48. Reservation types are included because
+/// inventory_balances tracks reserved_quantity.
+enum StockMovementType {
+  opening
+  purchase_receipt
+  sales_issue
+  sales_return
+  purchase_return
+  adjustment_in
+  adjustment_out
+  transfer_in
+  transfer_out
+  reservation
+  reservation_release
+
+  @@map("stock_movement_type")
+}
+
+/// Business document that caused a stock movement, for traceability.
+enum StockReferenceType {
+  goods_receipt
+  sales_order
+  invoice
+  adjustment
+  transfer
+  opening_balance
+
+  @@map("stock_reference_type")
+}
+
+enum CommunicationChannel {
+  whatsapp
+  email
+  sms
+
+  @@map("communication_channel")
+}
+
+enum CommunicationDirection {
+  outbound
+  inbound
+
+  @@map("communication_direction")
+}
+
+/// DATABASE.md section 86.
+enum CommunicationStatus {
+  draft
+  queued
+  sending
+  sent
+  delivered
+  read
+  failed
+
+  @@map("communication_status")
+}
+
+enum TemplateStatus {
+  draft
+  active
+  inactive
+
+  @@map("template_status")
+}
+
+/// Entity a communication, file or notification refers to. DATABASE.md
+/// sections 87 and 94 accept a polymorphic link here because these records
+/// legitimately attach to many unrelated entity types; integrity is enforced in
+/// the application layer.
+enum RelatedEntityType {
+  lead
+  contact
+  company
+  quotation
+  sales_order
+  purchase_order
+  goods_receipt
+  invoice
+  payment
+  product
+
+  @@map("related_entity_type")
+}
+
+/// DATABASE.md section 95.
+enum FilePurpose {
+  customer_document
+  quotation_attachment
+  po_attachment
+  invoice_pdf
+  payment_proof
+  communication_attachment
+  product_document
+  other
+
+  @@map("file_purpose")
+}
+
+/// DATABASE.md section 79.
+enum DocumentType {
+  quotation
+  sales_order
+  purchase_order
+  goods_receipt
+  invoice
+  payment
+
+  @@map("document_type")
+}
+
+enum SettingDataType {
+  string
+  number
+  boolean
+  json
+
+  @@map("setting_data_type")
+}
+
+// ---------------------------------------------------------------------------
+// Identity (DATABASE.md sections 15-22)
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 15. Credentials are deliberately absent: authentication
+/// is a later step, and `authProviderId` allows an external identity provider
+/// without duplicating secrets here.
+model User {
+  id             String     @id @default(uuid()) @db.Uuid
+  firstName      String     @map("first_name") @db.VarChar(100)
+  lastName       String     @map("last_name") @db.VarChar(100)
+  email          String     @unique @db.VarChar(255)
+  phone          String?    @db.VarChar(20)
+  authProviderId String?    @unique @map("auth_provider_id") @db.VarChar(255)
+  /// Argon2id hash. Null for users who only authenticate through a future
+  /// external provider (authProviderId) - password auth is optional per user,
+  /// not universal (Step 4: "never store plaintext passwords").
+  passwordHash   String?    @map("password_hash") @db.VarChar(255)
+  status         UserStatus @default(active)
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt     DateTime?  @map("archived_at") @db.Timestamptz(6)
+
+  sessions               Session[]
+  passwordResetTokens    PasswordResetToken[]
+  managedTeams           Team[]               @relation("TeamManager")
+  teamMemberships        TeamMember[]
+  roles                  UserRole[]
+  assignedLeads          Lead[]               @relation("LeadAssignee")
+  createdLeads           Lead[]               @relation("LeadCreator")
+  leadActivities         LeadActivity[]
+  assignedFollowUps      FollowUp[]           @relation("FollowUpAssignee")
+  createdFollowUps       FollowUp[]           @relation("FollowUpCreator")
+  ownedContacts          Contact[]            @relation("ContactOwner")
+  ownedCompanies         Company[]            @relation("CompanyOwner")
+  managedWarehouses      Warehouse[]
+  ownedQuotations        Quotation[]          @relation("QuotationOwner")
+  ownedSalesOrders       SalesOrder[]         @relation("SalesOrderOwner")
+  approvedPurchaseOrders PurchaseOrder[]      @relation("PurchaseOrderApprover")
+  receivedGoodsReceipts  GoodsReceipt[]
+  recordedPayments       Payment[]            @relation("PaymentReceiver")
+  stockMovements         StockMovement[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  uploadedFiles          File[]
+
+  @@index([status])
+  @@map("users")
+}
+
+/// DATABASE.md section 17.
+model Team {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(150)
+  description String?
+  managerId   String?  @map("manager_id") @db.Uuid
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // A team survives its manager leaving; ownership is reassigned, not cascaded.
+  manager User?        @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
+  members TeamMember[]
+  leads   Lead[]
+
+  @@index([managerId])
+  @@map("teams")
+}
+
+/// DATABASE.md section 18. Users may belong to several teams.
+model TeamMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  membershipRole String?  @map("membership_role") @db.VarChar(50)
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  isActive       Boolean  @default(true) @map("is_active")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+/// DATABASE.md section 19.
+model Role {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique @db.VarChar(100)
+  description  String?
+  isSystemRole Boolean  @default(false) @map("is_system_role")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+/// DATABASE.md section 20. `code` is the stable identifier application code
+/// checks against (for example `lead.create`).
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique @db.VarChar(100)
+  name        String   @db.VarChar(150)
+  description String?
+  module      String   @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+/// DATABASE.md section 21.
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+/// DATABASE.md section 22.
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// CRM (DATABASE.md sections 23-37)
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 25. A reference table rather than an enum because
+/// CRM.md requires sources to be configurable by the business.
+model LeadSource {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  leads Lead[]
+
+  @@map("lead_sources")
+}
+
+/// DATABASE.md section 24. A converted lead is retained, not deleted
+/// (DATABASE.md section 27), so conversion targets are nullable links.
+model Lead {
+  id                 String       @id @default(uuid()) @db.Uuid
+  firstName          String       @map("first_name") @db.VarChar(100)
+  lastName           String?      @map("last_name") @db.VarChar(100)
+  companyName        String?      @map("company_name") @db.VarChar(200)
+  phone              String?      @db.VarChar(20)
+  /// Canonical E.164 form used for search and duplicate detection
+  /// (DATABASE.md sections 132-133). Populated by the application layer.
+  phoneNormalized    String?      @map("phone_normalized") @db.VarChar(20)
+  alternatePhone     String?      @map("alternate_phone") @db.VarChar(20)
+  email              String?      @db.VarChar(255)
+  emailNormalized    String?      @map("email_normalized") @db.VarChar(255)
+  sourceId           String?      @map("source_id") @db.Uuid
+  status             LeadStatus   @default(new)
+  priority           LeadPriority @default(medium)
+  assignedTo         String?      @map("assigned_to") @db.Uuid
+  assignedTeamId     String?      @map("assigned_team_id") @db.Uuid
+  estimatedValue     Decimal?     @map("estimated_value") @db.Decimal(18, 2)
+  currencyCode       String       @default("INR") @map("currency_code") @db.Char(3)
+  notes              String?
+  nextFollowUpAt     DateTime?    @map("next_follow_up_at") @db.Timestamptz(6)
+  convertedAt        DateTime?    @map("converted_at") @db.Timestamptz(6)
+  convertedContactId String?      @map("converted_contact_id") @db.Uuid
+  convertedCompanyId String?      @map("converted_company_id") @db.Uuid
+  createdBy          String?      @map("created_by") @db.Uuid
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt         DateTime?    @map("archived_at") @db.Timestamptz(6)
+
+  source           LeadSource? @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  assignee         User?       @relation("LeadAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  assignedTeam     Team?       @relation(fields: [assignedTeamId], references: [id], onDelete: SetNull)
+  creator          User?       @relation("LeadCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  convertedContact Contact?    @relation(fields: [convertedContactId], references: [id], onDelete: SetNull)
+  convertedCompany Company?    @relation(fields: [convertedCompanyId], references: [id], onDelete: SetNull)
+
+  activities LeadActivity[]
+  followUps  FollowUp[]
+  quotations Quotation[]
+
+  @@index([status])
+  @@index([assignedTo])
+  @@index([createdAt])
+  @@index([nextFollowUpAt])
+  @@index([phoneNormalized])
+  @@index([emailNormalized])
+  @@index([sourceId])
+  @@index([assignedTeamId])
+  // Serves the "my open leads" screen (DATABASE.md section 109).
+  @@index([assignedTo, status, createdAt])
+  @@map("leads")
+}
+
+/// DATABASE.md section 28. Business-facing timeline, distinct from AuditLog
+/// (DATABASE.md section 102).
+model LeadActivity {
+  id           String           @id @default(uuid()) @db.Uuid
+  leadId       String           @map("lead_id") @db.Uuid
+  activityType LeadActivityType @map("activity_type")
+  title        String           @db.VarChar(200)
+  description  String?
+  performedBy  String?          @map("performed_by") @db.Uuid
+  activityAt   DateTime         @default(now()) @map("activity_at") @db.Timestamptz(6)
+  metadata     Json?
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Activities are owned by their lead and carry no independent meaning.
+  lead      Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  performer User? @relation(fields: [performedBy], references: [id], onDelete: SetNull)
+
+  @@index([leadId, activityAt])
+  @@map("lead_activities")
+}
+
+/// DATABASE.md section 29. At least one CRM relationship must be present; this
+/// is enforced by a CHECK constraint added in the migration.
+model FollowUp {
+  id           String         @id @default(uuid()) @db.Uuid
+  leadId       String?        @map("lead_id") @db.Uuid
+  contactId    String?        @map("contact_id") @db.Uuid
+  companyId    String?        @map("company_id") @db.Uuid
+  assignedTo   String         @map("assigned_to") @db.Uuid
+  followUpType FollowUpType   @map("follow_up_type")
+  scheduledAt  DateTime       @map("scheduled_at") @db.Timestamptz(6)
+  status       FollowUpStatus @default(pending)
+  notes        String?
+  outcome      String?
+  completedAt  DateTime?      @map("completed_at") @db.Timestamptz(6)
+  createdBy    String?        @map("created_by") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company  Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignee User     @relation("FollowUpAssignee", fields: [assignedTo], references: [id], onDelete: Restrict)
+  creator  User?    @relation("FollowUpCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  // Drives the "my follow-ups due" queue.
+  @@index([assignedTo, status, scheduledAt])
+  @@index([leadId])
+  @@index([contactId])
+  @@index([companyId])
+  @@index([scheduledAt])
+  @@map("follow_ups")
+}
+
+/// DATABASE.md section 31. A contact is a person.
+model Contact {
+  id              String    @id @default(uuid()) @db.Uuid
+  firstName       String    @map("first_name") @db.VarChar(100)
+  lastName        String?   @map("last_name") @db.VarChar(100)
+  jobTitle        String?   @map("job_title") @db.VarChar(100)
+  phone           String?   @db.VarChar(20)
+  phoneNormalized String?   @map("phone_normalized") @db.VarChar(20)
+  alternatePhone  String?   @map("alternate_phone") @db.VarChar(20)
+  email           String?   @db.VarChar(255)
+  emailNormalized String?   @map("email_normalized") @db.VarChar(255)
+  companyId       String?   @map("company_id") @db.Uuid
+  isPrimary       Boolean   @default(false) @map("is_primary")
+  ownerId         String?   @map("owner_id") @db.Uuid
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt      DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  // Restrict: a company with contacts must be archived, not deleted.
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  owner   User?    @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  addresses      Address[]
+  followUps      FollowUp[]
+  convertedLeads Lead[]
+  quotations     Quotation[]
+  salesOrders    SalesOrder[]
+  invoices       Invoice[]
+
+  @@index([companyId])
+  @@index([phoneNormalized])
+  @@index([emailNormalized])
+  @@index([ownerId])
+  @@map("contacts")
+}
+
+/// DATABASE.md section 32. One company may be both customer and supplier
+/// (DATABASE.md section 33), so the two roles are flags plus optional profile
+/// tables rather than separate entities.
+model Company {
+  id               String      @id @default(uuid()) @db.Uuid
+  name             String      @db.VarChar(200)
+  companyType      CompanyType @default(business_customer) @map("company_type")
+  phone            String?     @db.VarChar(20)
+  phoneNormalized  String?     @map("phone_normalized") @db.VarChar(20)
+  email            String?     @db.VarChar(255)
+  website          String?     @db.VarChar(255)
+  /// Stored unformatted and uppercased by the application (DATABASE.md
+  /// section 121). Not unique: the same GSTIN can legitimately appear while
+  /// duplicates are being reconciled.
+  gstin            String?     @db.VarChar(15)
+  taxIdentifier    String?     @map("tax_identifier") @db.VarChar(50)
+  /// Normalised state code for GST place-of-supply (DATABASE.md section 122).
+  stateCode        String?     @map("state_code") @db.VarChar(2)
+  ownerId          String?     @map("owner_id") @db.Uuid
+  creditLimit      Decimal?    @map("credit_limit") @db.Decimal(18, 2)
+  paymentTermsDays Int?        @map("payment_terms_days")
+  isCustomer       Boolean     @default(false) @map("is_customer")
+  isSupplier       Boolean     @default(false) @map("is_supplier")
+  isActive         Boolean     @default(true) @map("is_active")
+  createdBy        String?     @map("created_by") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt       DateTime?   @map("archived_at") @db.Timestamptz(6)
+
+  owner User? @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  customerProfile CustomerProfile?
+  supplierProfile SupplierProfile?
+  contacts        Contact[]
+  addresses       Address[]
+  followUps       FollowUp[]
+  convertedLeads  Lead[]
+  quotations      Quotation[]
+  salesOrders     SalesOrder[]
+  purchaseOrders  PurchaseOrder[]
+  invoices        Invoice[]
+  payments        Payment[]
+
+  @@index([name])
+  @@index([gstin])
+  @@index([isCustomer])
+  @@index([isSupplier])
+  @@index([ownerId])
+  @@map("companies")
+}
+
+/// DATABASE.md section 34. Customer-role attributes that would otherwise force
+/// a duplicate company record.
+model CustomerProfile {
+  companyId        String    @id @map("company_id") @db.Uuid
+  customerCode     String?   @unique @map("customer_code") @db.VarChar(50)
+  creditLimit      Decimal?  @map("credit_limit") @db.Decimal(18, 2)
+  paymentTermsDays Int?      @map("payment_terms_days")
+  customerSince    DateTime? @map("customer_since") @db.Date
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("customer_profiles")
+}
+
+/// DATABASE.md section 35. Supersedes the separate `suppliers` table sketched
+/// in DATABASE.md section 4, per the explicit guidance in section 33.
+model SupplierProfile {
+  companyId        String    @id @map("company_id") @db.Uuid
+  supplierCode     String?   @unique @map("supplier_code") @db.VarChar(50)
+  paymentTermsDays Int?      @map("payment_terms_days")
+  supplierSince    DateTime? @map("supplier_since") @db.Date
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("supplier_profiles")
+}
+
+/// DATABASE.md section 36. Explicit nullable foreign keys are used instead of a
+/// polymorphic entity_type/entity_id pair, because that section requires
+/// relational integrity to be favoured over convenience. A CHECK constraint in
+/// the migration enforces that exactly one owner is set.
+model Address {
+  id          String      @id @default(uuid()) @db.Uuid
+  companyId   String?     @map("company_id") @db.Uuid
+  contactId   String?     @map("contact_id") @db.Uuid
+  warehouseId String?     @map("warehouse_id") @db.Uuid
+  addressType AddressType @map("address_type")
+  line1       String      @db.VarChar(255)
+  line2       String?     @db.VarChar(255)
+  city        String      @db.VarChar(100)
+  state       String      @db.VarChar(100)
+  stateCode   String?     @map("state_code") @db.VarChar(2)
+  postalCode  String?     @map("postal_code") @db.VarChar(20)
+  countryCode String      @default("IN") @map("country_code") @db.Char(2)
+  isDefault   Boolean     @default(false) @map("is_default")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company   Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact   Contact?   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([contactId])
+  @@index([warehouseId])
+  @@map("addresses")
+}
+
+// ---------------------------------------------------------------------------
+// Product catalog (DATABASE.md sections 38-45)
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 39. Self-referencing hierarchy supports optional
+/// sub-categories (Lights -> LED Bulbs) without a separate table.
+model ProductCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(150)
+  parentId    String?  @map("parent_id") @db.Uuid
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent   ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children ProductCategory[] @relation("CategoryHierarchy")
+  products Product[]
+
+  @@unique([parentId, name])
+  @@index([parentId])
+  @@map("product_categories")
+}
+
+/// DATABASE.md section 40.
+model Brand {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(150)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  products Product[]
+
+  @@map("brands")
+}
+
+/// DATABASE.md section 41. `decimalAllowed` tells the application whether
+/// fractional quantities are valid for products using this unit - wire sold by
+/// the metre versus fans sold by the piece.
+model Unit {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @unique @db.VarChar(50)
+  symbol         String   @unique @db.VarChar(20)
+  decimalAllowed Boolean  @default(false) @map("decimal_allowed")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  products Product[]
+
+  @@map("units")
+}
+
+/// DATABASE.md section 42. A single product table covers lights, fans, wires
+/// and switches; category and unit carry the variation, so no per-category
+/// tables or wide attribute columns are needed.
+model Product {
+  id                     String    @id @default(uuid()) @db.Uuid
+  /// Unique across the catalogue (DATABASE.md section 43). Scope would become
+  /// organisation-relative if multi-tenancy is ever introduced.
+  sku                    String    @unique @db.VarChar(80)
+  name                   String    @db.VarChar(200)
+  description            String?
+  categoryId             String    @map("category_id") @db.Uuid
+  brandId                String?   @map("brand_id") @db.Uuid
+  unitId                 String    @map("unit_id") @db.Uuid
+  /// Indian HSN classification used for GST reporting.
+  hsnCode                String?   @map("hsn_code") @db.VarChar(10)
+  /// Default GST rate. Documents snapshot their own rate at issue time.
+  taxRate                Decimal   @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  /// Reference prices only; authoritative prices live on document line items
+  /// (DATABASE.md section 44).
+  purchasePriceReference Decimal?  @map("purchase_price_reference") @db.Decimal(18, 4)
+  sellingPriceReference  Decimal?  @map("selling_price_reference") @db.Decimal(18, 4)
+  minimumStockLevel      Decimal?  @map("minimum_stock_level") @db.Decimal(18, 3)
+  isActive               Boolean   @default(true) @map("is_active")
+  createdBy              String?   @map("created_by") @db.Uuid
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt             DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  // Restrict: historical documents must keep resolving their product
+  // (DATABASE.md section 116).
+  category ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand    Brand?          @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  unit     Unit            @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  inventoryBalances  InventoryBalance[]
+  stockMovements     StockMovement[]
+  quotationItems     QuotationItem[]
+  salesOrderItems    SalesOrderItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  goodsReceiptItems  GoodsReceiptItem[]
+  invoiceItems       InvoiceItem[]
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([isActive])
+  @@map("products")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (DATABASE.md sections 46-53)
+//
+// Ledger plus balance: stock_movements records why stock changed,
+// inventory_balances gives fast current state. The balance is derived state
+// maintained transactionally by the inventory domain, never edited directly
+// (DATABASE.md sections 47 and 51).
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 46.
+model Warehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(150)
+  managerId String?  @map("manager_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  manager User? @relation(fields: [managerId], references: [id], onDelete: SetNull)
+
+  addresses         Address[]
+  inventoryBalances InventoryBalance[]
+  stockMovements    StockMovement[]
+  goodsReceipts     GoodsReceipt[]
+
+  @@map("warehouses")
+}
+
+/// DATABASE.md section 50. `available = onHand - reserved` is derived, never
+/// stored, so there is only one source of truth.
+model InventoryBalance {
+  id               String   @id @default(uuid()) @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  warehouseId      String   @map("warehouse_id") @db.Uuid
+  onHandQuantity   Decimal  @default(0) @map("on_hand_quantity") @db.Decimal(18, 3)
+  reservedQuantity Decimal  @default(0) @map("reserved_quantity") @db.Decimal(18, 3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, warehouseId])
+  @@index([warehouseId])
+  @@map("inventory_balances")
+}
+
+/// DATABASE.md section 48. Append-only ledger.
+///
+/// `quantityDelta` follows the single signed convention required by
+/// DATABASE.md section 49: positive increases stock, negative decreases it.
+/// Direction is never stored separately, so the two can never disagree.
+model StockMovement {
+  id            String              @id @default(uuid()) @db.Uuid
+  productId     String              @map("product_id") @db.Uuid
+  warehouseId   String              @map("warehouse_id") @db.Uuid
+  movementType  StockMovementType   @map("movement_type")
+  quantityDelta Decimal             @map("quantity_delta") @db.Decimal(18, 3)
+  unitCost      Decimal?            @map("unit_cost") @db.Decimal(18, 4)
+  referenceType StockReferenceType? @map("reference_type")
+  referenceId   String?             @map("reference_id") @db.Uuid
+  movementAt    DateTime            @default(now()) @map("movement_at") @db.Timestamptz(6)
+  notes         String?
+  createdBy     String?             @map("created_by") @db.Uuid
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Restrict everywhere: stock history is evidence and must survive master-data
+  // archival (DATABASE.md sections 112 and 116).
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  creator   User?     @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([productId, warehouseId, movementAt])
+  @@index([warehouseId, movementAt])
+  @@index([referenceType, referenceId])
+  @@index([movementAt])
+  @@map("stock_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Sales (DATABASE.md sections 54-60)
+//
+// Line items carry `*_snapshot` columns so an issued document keeps the wording
+// and pricing used at the time, even after the product master changes
+// (DATABASE.md section 57).
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 55.
+model Quotation {
+  id                      String          @id @default(uuid()) @db.Uuid
+  quotationNumber         String          @unique @map("quotation_number") @db.VarChar(50)
+  customerCompanyId       String          @map("customer_company_id") @db.Uuid
+  contactId               String?         @map("contact_id") @db.Uuid
+  leadId                  String?         @map("lead_id") @db.Uuid
+  quotationDate           DateTime        @map("quotation_date") @db.Date
+  validUntil              DateTime?       @map("valid_until") @db.Date
+  status                  QuotationStatus @default(draft)
+  currencyCode            String          @default("INR") @map("currency_code") @db.Char(3)
+  subtotal                Decimal         @default(0) @db.Decimal(18, 2)
+  discountAmount          Decimal         @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxAmount               Decimal         @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount             Decimal         @default(0) @map("total_amount") @db.Decimal(18, 2)
+  billingAddressSnapshot  Json?           @map("billing_address_snapshot")
+  shippingAddressSnapshot Json?           @map("shipping_address_snapshot")
+  notes                   String?
+  terms                   String?
+  ownerId                 String?         @map("owner_id") @db.Uuid
+  createdBy               String?         @map("created_by") @db.Uuid
+  createdAt               DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer Company  @relation(fields: [customerCompanyId], references: [id], onDelete: Restrict)
+  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  owner    User?    @relation("QuotationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  items       QuotationItem[]
+  salesOrders SalesOrder[]
+
+  @@index([customerCompanyId])
+  @@index([status])
+  @@index([quotationDate])
+  @@index([leadId])
+  @@index([contactId])
+  @@index([ownerId])
+  @@map("quotations")
+}
+
+/// DATABASE.md section 56.
+model QuotationItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  quotationId         String   @map("quotation_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  skuSnapshot         String   @map("sku_snapshot") @db.VarChar(80)
+  productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(200)
+  descriptionSnapshot String?  @map("description_snapshot")
+  hsnSnapshot         String?  @map("hsn_snapshot") @db.VarChar(10)
+  unitSnapshot        String   @map("unit_snapshot") @db.VarChar(20)
+  quantity            Decimal  @db.Decimal(18, 3)
+  unitPrice           Decimal  @map("unit_price") @db.Decimal(18, 4)
+  discountPercentage  Decimal  @default(0) @map("discount_percentage") @db.Decimal(5, 2)
+  discountAmount      Decimal  @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxRate             Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount           Decimal  @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  lineTotal           Decimal  @map("line_total") @db.Decimal(18, 2)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Cascade is deliberate and limited to this owned child collection
+  // (DATABASE.md section 113).
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  salesOrderItems SalesOrderItem[]
+
+  @@index([quotationId])
+  @@index([productId])
+  @@map("quotation_items")
+}
+
+/// DATABASE.md section 58.
+model SalesOrder {
+  id                      String           @id @default(uuid()) @db.Uuid
+  salesOrderNumber        String           @unique @map("sales_order_number") @db.VarChar(50)
+  /// Explicit link back to the source quotation (DATABASE.md section 60).
+  quotationId             String?          @map("quotation_id") @db.Uuid
+  customerCompanyId       String           @map("customer_company_id") @db.Uuid
+  contactId               String?          @map("contact_id") @db.Uuid
+  orderDate               DateTime         @map("order_date") @db.Date
+  expectedDeliveryDate    DateTime?        @map("expected_delivery_date") @db.Date
+  status                  SalesOrderStatus @default(draft)
+  currencyCode            String           @default("INR") @map("currency_code") @db.Char(3)
+  subtotal                Decimal          @default(0) @db.Decimal(18, 2)
+  discountAmount          Decimal          @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxAmount               Decimal          @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount             Decimal          @default(0) @map("total_amount") @db.Decimal(18, 2)
+  billingAddressSnapshot  Json?            @map("billing_address_snapshot")
+  shippingAddressSnapshot Json?            @map("shipping_address_snapshot")
+  ownerId                 String?          @map("owner_id") @db.Uuid
+  notes                   String?
+  terms                   String?
+  createdBy               String?          @map("created_by") @db.Uuid
+  createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  confirmedAt             DateTime?        @map("confirmed_at") @db.Timestamptz(6)
+  completedAt             DateTime?        @map("completed_at") @db.Timestamptz(6)
+  cancelledAt             DateTime?        @map("cancelled_at") @db.Timestamptz(6)
+
+  quotation Quotation? @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  customer  Company    @relation(fields: [customerCompanyId], references: [id], onDelete: Restrict)
+  contact   Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  owner     User?      @relation("SalesOrderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  items    SalesOrderItem[]
+  invoices Invoice[]
+
+  @@index([customerCompanyId])
+  @@index([status])
+  @@index([orderDate])
+  @@index([quotationId])
+  @@index([contactId])
+  @@index([ownerId])
+  @@map("sales_orders")
+}
+
+/// DATABASE.md section 59.
+model SalesOrderItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  salesOrderId        String   @map("sales_order_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  quotationItemId     String?  @map("quotation_item_id") @db.Uuid
+  skuSnapshot         String   @map("sku_snapshot") @db.VarChar(80)
+  productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(200)
+  descriptionSnapshot String?  @map("description_snapshot")
+  hsnSnapshot         String?  @map("hsn_snapshot") @db.VarChar(10)
+  unitSnapshot        String   @map("unit_snapshot") @db.VarChar(20)
+  quantity            Decimal  @db.Decimal(18, 3)
+  unitPrice           Decimal  @map("unit_price") @db.Decimal(18, 4)
+  discountPercentage  Decimal  @default(0) @map("discount_percentage") @db.Decimal(5, 2)
+  discountAmount      Decimal  @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxRate             Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount           Decimal  @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  lineTotal           Decimal  @map("line_total") @db.Decimal(18, 2)
+  fulfilledQuantity   Decimal  @default(0) @map("fulfilled_quantity") @db.Decimal(18, 3)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  salesOrder    SalesOrder     @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quotationItem QuotationItem? @relation(fields: [quotationItemId], references: [id], onDelete: SetNull)
+
+  invoiceItems InvoiceItem[]
+
+  @@index([salesOrderId])
+  @@index([productId])
+  @@index([quotationItemId])
+  @@map("sales_order_items")
+}
+
+// ---------------------------------------------------------------------------
+// Purchase (DATABASE.md sections 61-67)
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 62. The supplier is a Company carrying `isSupplier`.
+model PurchaseOrder {
+  id                      String              @id @default(uuid()) @db.Uuid
+  poNumber                String              @unique @map("po_number") @db.VarChar(50)
+  supplierCompanyId       String              @map("supplier_company_id") @db.Uuid
+  poDate                  DateTime            @map("po_date") @db.Date
+  expectedDeliveryDate    DateTime?           @map("expected_delivery_date") @db.Date
+  status                  PurchaseOrderStatus @default(draft)
+  currencyCode            String              @default("INR") @map("currency_code") @db.Char(3)
+  subtotal                Decimal             @default(0) @db.Decimal(18, 2)
+  discountAmount          Decimal             @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxAmount               Decimal             @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount             Decimal             @default(0) @map("total_amount") @db.Decimal(18, 2)
+  shippingAddressSnapshot Json?               @map("shipping_address_snapshot")
+  supplierAddressSnapshot Json?               @map("supplier_address_snapshot")
+  notes                   String?
+  terms                   String?
+  createdBy               String?             @map("created_by") @db.Uuid
+  approvedBy              String?             @map("approved_by") @db.Uuid
+  approvedAt              DateTime?           @map("approved_at") @db.Timestamptz(6)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  supplier Company @relation(fields: [supplierCompanyId], references: [id], onDelete: Restrict)
+  approver User?   @relation("PurchaseOrderApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  items         PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
+
+  @@index([supplierCompanyId])
+  @@index([status])
+  @@index([poDate])
+  @@map("purchase_orders")
+}
+
+/// DATABASE.md section 63. `receivedQuantity` accumulates across receipts so
+/// ordered quantity is never overwritten (PURCHASE.md section 60).
+model PurchaseOrderItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  purchaseOrderId     String   @map("purchase_order_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  skuSnapshot         String   @map("sku_snapshot") @db.VarChar(80)
+  productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(200)
+  descriptionSnapshot String?  @map("description_snapshot")
+  hsnSnapshot         String?  @map("hsn_snapshot") @db.VarChar(10)
+  unitSnapshot        String   @map("unit_snapshot") @db.VarChar(20)
+  orderedQuantity     Decimal  @map("ordered_quantity") @db.Decimal(18, 3)
+  receivedQuantity    Decimal  @default(0) @map("received_quantity") @db.Decimal(18, 3)
+  unitPrice           Decimal  @map("unit_price") @db.Decimal(18, 4)
+  discountPercentage  Decimal  @default(0) @map("discount_percentage") @db.Decimal(5, 2)
+  discountAmount      Decimal  @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxRate             Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount           Decimal  @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  lineTotal           Decimal  @map("line_total") @db.Decimal(18, 2)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchase_order_items")
+}
+
+/// DATABASE.md section 64. A purchase order may have many receipts, which is
+/// what makes partial delivery possible (DATABASE.md section 67).
+model GoodsReceipt {
+  id                     String   @id @default(uuid()) @db.Uuid
+  receiptNumber          String   @unique @map("receipt_number") @db.VarChar(50)
+  purchaseOrderId        String   @map("purchase_order_id") @db.Uuid
+  warehouseId            String   @map("warehouse_id") @db.Uuid
+  receiptDate            DateTime @map("receipt_date") @db.Date
+  supplierDocumentNumber String?  @map("supplier_document_number") @db.VarChar(100)
+  notes                  String?
+  receivedBy             String?  @map("received_by") @db.Uuid
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Restrict: a receipt is the evidence behind stock movements.
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  warehouse     Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  receiver      User?         @relation(fields: [receivedBy], references: [id], onDelete: SetNull)
+
+  items GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([warehouseId])
+  @@index([receiptDate])
+  @@map("goods_receipts")
+}
+
+/// DATABASE.md section 65. Accepted/rejected are separated because PURCHASE.md
+/// treats quality rejection as a distinct commercial outcome.
+model GoodsReceiptItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  goodsReceiptId      String   @map("goods_receipt_id") @db.Uuid
+  purchaseOrderItemId String   @map("purchase_order_item_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  quantityReceived    Decimal  @map("quantity_received") @db.Decimal(18, 3)
+  acceptedQuantity    Decimal  @map("accepted_quantity") @db.Decimal(18, 3)
+  rejectedQuantity    Decimal  @default(0) @map("rejected_quantity") @db.Decimal(18, 3)
+  unitCost            Decimal? @map("unit_cost") @db.Decimal(18, 4)
+  notes               String?
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  goodsReceipt      GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict)
+  product           Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([goodsReceiptId])
+  @@index([purchaseOrderItemId])
+  @@index([productId])
+  @@map("goods_receipt_items")
+}
+
+// ---------------------------------------------------------------------------
+// Billing (DATABASE.md sections 68-78)
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 69. Customer identity and tax details are snapshotted so
+/// an issued invoice never changes because master data changed
+/// (DATABASE.md section 71).
+model Invoice {
+  id                      String        @id @default(uuid()) @db.Uuid
+  invoiceNumber           String        @unique @map("invoice_number") @db.VarChar(50)
+  salesOrderId            String?       @map("sales_order_id") @db.Uuid
+  customerCompanyId       String        @map("customer_company_id") @db.Uuid
+  contactId               String?       @map("contact_id") @db.Uuid
+  invoiceDate             DateTime      @map("invoice_date") @db.Date
+  dueDate                 DateTime?     @map("due_date") @db.Date
+  status                  InvoiceStatus @default(draft)
+  currencyCode            String        @default("INR") @map("currency_code") @db.Char(3)
+  subtotal                Decimal       @default(0) @db.Decimal(18, 2)
+  discountAmount          Decimal       @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxableAmount           Decimal       @default(0) @map("taxable_amount") @db.Decimal(18, 2)
+  cgstAmount              Decimal       @default(0) @map("cgst_amount") @db.Decimal(18, 2)
+  sgstAmount              Decimal       @default(0) @map("sgst_amount") @db.Decimal(18, 2)
+  igstAmount              Decimal       @default(0) @map("igst_amount") @db.Decimal(18, 2)
+  taxAmount               Decimal       @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  totalAmount             Decimal       @default(0) @map("total_amount") @db.Decimal(18, 2)
+  /// Maintained transactionally alongside allocations
+  /// (DATABASE.md sections 76-77).
+  paidAmount              Decimal       @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  outstandingAmount       Decimal       @default(0) @map("outstanding_amount") @db.Decimal(18, 2)
+  billingAddressSnapshot  Json?         @map("billing_address_snapshot")
+  shippingAddressSnapshot Json?         @map("shipping_address_snapshot")
+  customerNameSnapshot    String        @map("customer_name_snapshot") @db.VarChar(200)
+  customerGstinSnapshot   String?       @map("customer_gstin_snapshot") @db.VarChar(15)
+  placeOfSupplyCode       String?       @map("place_of_supply_code") @db.VarChar(2)
+  notes                   String?
+  terms                   String?
+  issuedAt                DateTime?     @map("issued_at") @db.Timestamptz(6)
+  cancelledAt             DateTime?     @map("cancelled_at") @db.Timestamptz(6)
+  createdBy               String?       @map("created_by") @db.Uuid
+  createdAt               DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  salesOrder SalesOrder? @relation(fields: [salesOrderId], references: [id], onDelete: Restrict)
+  customer   Company     @relation(fields: [customerCompanyId], references: [id], onDelete: Restrict)
+  contact    Contact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  items       InvoiceItem[]
+  allocations PaymentAllocation[]
+
+  @@index([customerCompanyId])
+  @@index([status])
+  @@index([invoiceDate])
+  @@index([dueDate])
+  @@index([salesOrderId])
+  @@index([contactId])
+  // Supports the outstanding-receivables report.
+  @@index([status, dueDate])
+  @@map("invoices")
+}
+
+/// DATABASE.md section 70. Full GST breakdown is snapshotted per line.
+model InvoiceItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  invoiceId           String   @map("invoice_id") @db.Uuid
+  salesOrderItemId    String?  @map("sales_order_item_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  skuSnapshot         String   @map("sku_snapshot") @db.VarChar(80)
+  productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(200)
+  descriptionSnapshot String?  @map("description_snapshot")
+  hsnSnapshot         String?  @map("hsn_snapshot") @db.VarChar(10)
+  unitSnapshot        String   @map("unit_snapshot") @db.VarChar(20)
+  quantity            Decimal  @db.Decimal(18, 3)
+  unitPrice           Decimal  @map("unit_price") @db.Decimal(18, 4)
+  discountPercentage  Decimal  @default(0) @map("discount_percentage") @db.Decimal(5, 2)
+  discountAmount      Decimal  @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxableAmount       Decimal  @default(0) @map("taxable_amount") @db.Decimal(18, 2)
+  taxRate             Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  cgstRate            Decimal  @default(0) @map("cgst_rate") @db.Decimal(5, 2)
+  cgstAmount          Decimal  @default(0) @map("cgst_amount") @db.Decimal(18, 2)
+  sgstRate            Decimal  @default(0) @map("sgst_rate") @db.Decimal(5, 2)
+  sgstAmount          Decimal  @default(0) @map("sgst_amount") @db.Decimal(18, 2)
+  igstRate            Decimal  @default(0) @map("igst_rate") @db.Decimal(5, 2)
+  igstAmount          Decimal  @default(0) @map("igst_amount") @db.Decimal(18, 2)
+  taxAmount           Decimal  @default(0) @map("tax_amount") @db.Decimal(18, 2)
+  lineTotal           Decimal  @map("line_total") @db.Decimal(18, 2)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  invoice        Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  salesOrderItem SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id], onDelete: SetNull)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([salesOrderItemId])
+  @@map("invoice_items")
+}
+
+/// DATABASE.md section 73. A payment is an independent financial record; it is
+/// never modelled as a flag on an invoice.
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  paymentNumber     String        @unique @map("payment_number") @db.VarChar(50)
+  customerCompanyId String        @map("customer_company_id") @db.Uuid
+  paymentDate       DateTime      @map("payment_date") @db.Date
+  amount            Decimal       @db.Decimal(18, 2)
+  currencyCode      String        @default("INR") @map("currency_code") @db.Char(3)
+  paymentMethod     PaymentMethod @map("payment_method")
+  referenceNumber   String?       @map("reference_number") @db.VarChar(100)
+  status            PaymentStatus @default(recorded)
+  notes             String?
+  receivedBy        String?       @map("received_by") @db.Uuid
+  createdBy         String?       @map("created_by") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer Company @relation(fields: [customerCompanyId], references: [id], onDelete: Restrict)
+  receiver User?   @relation("PaymentReceiver", fields: [receivedBy], references: [id], onDelete: SetNull)
+
+  allocations PaymentAllocation[]
+
+  @@index([customerCompanyId])
+  @@index([paymentDate])
+  @@index([status])
+  @@map("payments")
+}
+
+/// DATABASE.md sections 74-75. The join that lets one payment settle several
+/// invoices and one invoice receive several payments.
+model PaymentAllocation {
+  id              String   @id @default(uuid()) @db.Uuid
+  paymentId       String   @map("payment_id") @db.Uuid
+  invoiceId       String   @map("invoice_id") @db.Uuid
+  allocatedAmount Decimal  @map("allocated_amount") @db.Decimal(18, 2)
+  createdBy       String?  @map("created_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Restrict on both sides: unwinding a settlement is a reversal workflow, not
+  // a delete (DATABASE.md section 112).
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  // A payment may only be applied to a given invoice once; adjust the amount
+  // rather than adding a second row.
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+// ---------------------------------------------------------------------------
+// Communication (DATABASE.md sections 82-92)
+//
+// Provider-neutral: `provider` and `providerMessageId` are plain reference
+// columns, so swapping a WhatsApp or email vendor does not change this model
+// (DATABASE.md section 83).
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 88.
+model CommunicationTemplate {
+  id                 String               @id @default(uuid()) @db.Uuid
+  name               String               @db.VarChar(150)
+  channel            CommunicationChannel
+  purpose            String               @db.VarChar(100)
+  subjectTemplate    String?              @map("subject_template") @db.VarChar(255)
+  bodyTemplate       String               @map("body_template")
+  /// Reference to the vendor's approved template, where the channel requires
+  /// pre-approval (WhatsApp). Never a vendor credential.
+  providerTemplateId String?              @map("provider_template_id") @db.VarChar(150)
+  languageCode       String               @default("en") @map("language_code") @db.VarChar(10)
+  status             TemplateStatus       @default(draft)
+  createdBy          String?              @map("created_by") @db.Uuid
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  communications Communication[]
+
+  @@unique([name, channel])
+  @@index([channel, status])
+  @@map("communication_templates")
+}
+
+/// DATABASE.md section 83.
+///
+/// `relatedEntityType` / `relatedEntityId` are a deliberate polymorphic link,
+/// which DATABASE.md section 87 accepts here because a communication can attach
+/// to any business document. Integrity is enforced in the application layer.
+model Communication {
+  id                String                 @id @default(uuid()) @db.Uuid
+  channel           CommunicationChannel
+  direction         CommunicationDirection @default(outbound)
+  status            CommunicationStatus    @default(draft)
+  sender            String?                @db.VarChar(255)
+  recipient         String                 @db.VarChar(255)
+  subject           String?                @db.VarChar(255)
+  messageBody       String?                @map("message_body")
+  templateId        String?                @map("template_id") @db.Uuid
+  provider          String?                @db.VarChar(50)
+  providerMessageId String?                @map("provider_message_id") @db.VarChar(255)
+  relatedEntityType RelatedEntityType?     @map("related_entity_type")
+  relatedEntityId   String?                @map("related_entity_id") @db.Uuid
+  createdBy         String?                @map("created_by") @db.Uuid
+  queuedAt          DateTime?              @map("queued_at") @db.Timestamptz(6)
+  sentAt            DateTime?              @map("sent_at") @db.Timestamptz(6)
+  deliveredAt       DateTime?              @map("delivered_at") @db.Timestamptz(6)
+  readAt            DateTime?              @map("read_at") @db.Timestamptz(6)
+  failedAt          DateTime?              @map("failed_at") @db.Timestamptz(6)
+  failureReason     String?                @map("failure_reason")
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  template CommunicationTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  events CommunicationEvent[]
+
+  @@index([recipient])
+  @@index([status])
+  @@index([createdAt])
+  @@index([relatedEntityType, relatedEntityId])
+  @@index([templateId])
+  @@map("communications")
+}
+
+/// DATABASE.md section 90. Provider delivery callbacks.
+model CommunicationEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  communicationId String   @map("communication_id") @db.Uuid
+  /// Unique per provider event so a redelivered webhook cannot be processed
+  /// twice (DATABASE.md section 91).
+  providerEventId String?  @unique @map("provider_event_id") @db.VarChar(255)
+  eventType       String   @map("event_type") @db.VarChar(50)
+  providerStatus  String?  @map("provider_status") @db.VarChar(50)
+  eventAt         DateTime @map("event_at") @db.Timestamptz(6)
+  /// Raw provider payload, kept for debugging only - never authoritative
+  /// business state (DATABASE.md section 92).
+  payload         Json?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  communication Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+
+  @@index([communicationId, eventAt])
+  @@map("communication_events")
+}
+
+// ---------------------------------------------------------------------------
+// Platform (DATABASE.md sections 93-103)
+// ---------------------------------------------------------------------------
+
+/// DATABASE.md section 93. Metadata only; bytes live in object storage.
+model File {
+  id               String    @id @default(uuid()) @db.Uuid
+  storageProvider  String    @map("storage_provider") @db.VarChar(50)
+  storageKey       String    @unique @map("storage_key") @db.VarChar(500)
+  originalFilename String    @map("original_filename") @db.VarChar(255)
+  mimeType         String    @map("mime_type") @db.VarChar(150)
+  sizeBytes        BigInt    @map("size_bytes")
+  checksum         String?   @db.VarChar(128)
+  uploadedBy       String?   @map("uploaded_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  uploader User? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  links FileLink[]
+
+  @@map("files")
+}
+
+/// DATABASE.md section 94. Lets one file attach to several business records.
+model FileLink {
+  id         String            @id @default(uuid()) @db.Uuid
+  fileId     String            @map("file_id") @db.Uuid
+  entityType RelatedEntityType @map("entity_type")
+  entityId   String            @map("entity_id") @db.Uuid
+  purpose    FilePurpose
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, entityType, entityId, purpose])
+  @@index([entityType, entityId])
+  @@map("file_links")
+}
+
+/// DATABASE.md section 97. In-app notifications, distinct from external
+/// communications (ARCHITECTURE.md section 76).
+model Notification {
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @map("user_id") @db.Uuid
+  type              String             @db.VarChar(50)
+  title             String             @db.VarChar(200)
+  message           String?
+  relatedEntityType RelatedEntityType? @map("related_entity_type")
+  relatedEntityId   String?            @map("related_entity_id") @db.Uuid
+  isRead            Boolean            @default(false) @map("is_read")
+  readAt            DateTime?          @map("read_at") @db.Timestamptz(6)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Matches the unread-notifications query in DATABASE.md section 98.
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+/// DATABASE.md section 99. Append-only administrative history, distinct from
+/// LeadActivity (DATABASE.md section 102).
+///
+/// There is deliberately no `updatedAt` and no application path that mutates
+/// rows: audit records are evidence (DATABASE.md section 101).
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(50)
+  entityId    String?  @map("entity_id") @db.Uuid
+  /// Field-level snapshots. Must never contain credentials or tokens.
+  beforeData  Json?    @map("before_data")
+  afterData   Json?    @map("after_data")
+  metadata    Json?
+  /// Correlates an audited change with the API request that caused it.
+  requestId   String?  @map("request_id") @db.VarChar(128)
+  ipAddress   String?  @map("ip_address") @db.Inet
+  userAgent   String?  @map("user_agent") @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // The actor link is severed rather than removing the evidence.
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// DATABASE.md section 79. Backs concurrency-safe business document numbering
+/// (DATABASE.md section 80): the generator locks the row and increments
+/// `currentNumber` inside the caller's transaction, never COUNT(*) + 1.
+model DocumentSequence {
+  id            String       @id @default(uuid()) @db.Uuid
+  documentType  DocumentType @map("document_type")
+  prefix        String       @db.VarChar(20)
+  /// Indian financial year, for example "2026-27" (DATABASE.md section 81).
+  financialYear String       @map("financial_year") @db.VarChar(10)
+  /// Branch or location segment of the number, for example "HYD".
+  locationCode  String       @default("") @map("location_code") @db.VarChar(10)
+  currentNumber Int          @default(0) @map("current_number")
+  padding       Int          @default(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([documentType, financialYear, locationCode])
+  @@map("document_sequences")
+}
+
+/// DATABASE.md section 103. Configurable application behaviour only - never
+/// secrets, which belong in the secret manager.
+model ApplicationSetting {
+  key         String          @id @db.VarChar(100)
+  value       String
+  dataType    SettingDataType @default(string) @map("data_type")
+  description String?
+  updatedBy   String?         @map("updated_by") @db.Uuid
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("application_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Authentication (Step 4)
+//
+// Not part of the Step 3 schema - DATABASE.md's user model has no password or
+// session persistence. Added here because Step 4 requires secure, revocable,
+// multi-device session state, which does not exist without it.
+// ---------------------------------------------------------------------------
+
+/// A single refresh-token lifetime, one row per issued/rotated token.
+///
+/// The access token (JWT) is stateless and never persisted. This table is the
+/// source of truth for "is this login still valid" - it is what makes logout,
+/// deactivation and reuse detection actually revoke access rather than merely
+/// waiting out a token's expiry (Step 4 sections 15, 19-21, 80-82).
+model Session {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// SHA-256 of the opaque refresh token. The raw token is returned to the
+  /// client exactly once, at issuance; only its hash is ever stored, so a
+  /// database leak does not yield usable credentials (section 19).
+  refreshTokenHash String @unique @map("refresh_token_hash") @db.VarChar(64)
+
+  userAgent String? @map("user_agent") @db.VarChar(500)
+  ipAddress String? @map("ip_address") @db.Inet
+
+  issuedAt   DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  /// Set when this session is rotated forward on refresh (section 20). If a
+  /// revoked session with this set is presented again, the presented token was
+  /// stolen and copied before rotation - every session for the user is revoked
+  /// in response (reuse detection).
+  replacedBySessionId String? @unique @map("replaced_by_session_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Cascade: unlike business/audit records, a session has no meaning once its
+  // user is gone and is not evidence that must survive - it is ephemeral
+  // security state, tightly owned by exactly one user (DATABASE.md section 113
+  // permits cascade for tightly-owned child records).
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy  Session? @relation("SessionRotation", fields: [replacedBySessionId], references: [id], onDelete: SetNull)
+  replacedFor Session? @relation("SessionRotation")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Single-use, time-limited password reset tokens (Step 4 sections 42-45).
+///
+/// Delivery (email/SMS) is intentionally not implemented - no communication
+/// provider is configured yet (Phase 0 scope) - but the secure token
+/// lifecycle this table backs is complete: generation, expiry, single use.
+model PasswordResetToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// SHA-256 of the reset token. As with sessions, only the hash is stored.
+  tokenHash String @unique @map("token_hash") @db.VarChar(64)
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Cascade for the same reason as Session: ephemeral security state, not
+  // business history.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}

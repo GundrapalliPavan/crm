@@ -1,4 +1,4 @@
-// Shared base ESLint flat config, extended by backend/frontend/mobile.
+// Shared base ESLint flat config, extended by apps/api, apps/web, and packages/*.
 // Each app's own eslint.config.mjs imports this and layers framework-specific rules on top.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -15,6 +15,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/**", "build/**", ".next/**", "node_modules/**", "coverage/**"],
+    ignores: ["dist/**", "build/**", "node_modules/**", "coverage/**"],
   },
 );

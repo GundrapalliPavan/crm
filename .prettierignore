@@ -1,9 +1,7 @@
 node_modules
 dist
 build
-.next
 out
-.expo
 coverage
 pnpm-lock.yaml
 *.md

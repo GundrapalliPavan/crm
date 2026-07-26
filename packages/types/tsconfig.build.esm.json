@@ -1,0 +1,24 @@
+// Second build output, alongside tsconfig.build.json's CommonJS output.
+//
+// Vite treats a pnpm-linked workspace package as source, not a pre-bundled
+// dependency, so it never runs its CJS-interop step on it - `vite build`
+// cannot statically resolve named value exports (e.g. REQUEST_ID_HEADER)
+// through the CJS build's `require`/`exports` output, even though `vite dev`
+// and Node/Nest (which consumes the CJS build directly) both work fine.
+// package.json's "exports" map points bundlers at this ESM build via the
+// "import" condition and Node/Jest at the CommonJS build via "require", so
+// both apps/web (Vite) and apps/api (NestJS) consume a format each actually
+// resolves natively. No declaration output here: index.d.ts from the
+// CommonJS build already covers types for both, since type declarations
+// don't differ by module format.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": false,
+    "declaration": false,
+    "outDir": "./dist/esm"
+  },
+  "include": ["src"]
+}

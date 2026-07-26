@@ -1,0 +1,26 @@
+/**
+ * Password policy (Step 4 section 9).
+ *
+ * DATABASE.md and PROJECT_SETUP.md do not specify a policy, so this is a
+ * project decision: length is the strongest practical signal of password
+ * strength, and a length-plus-composition rule stays usable without becoming
+ * hostile (NIST SP 800-63B favours long passwords over complex ones).
+ */
+export const PASSWORD_MIN_LENGTH = 10;
+export const PASSWORD_MAX_LENGTH = 128;
+
+/** Requires at least one letter and one digit; symbols are welcome, not required. */
+export const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d).+$/;
+
+export const PASSWORD_POLICY_MESSAGE =
+  `Password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters ` +
+  'and include at least one letter and one number.';
+
+/** Length of admin-generated temporary passwords (section 39). Comfortably above the minimum. */
+export const TEMPORARY_PASSWORD_LENGTH = 16;
+
+/** Password-reset token lifetime (section 44: "finite lifetime"). */
+export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
+
+/** Name of the httpOnly cookie carrying the opaque refresh token. */
+export const REFRESH_TOKEN_COOKIE_NAME = 'crm_refresh_token';

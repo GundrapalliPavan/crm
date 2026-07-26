@@ -11,13 +11,8 @@ node_modules/
 # Build output
 dist/
 build/
-.next/
 out/
-.expo/
 .turbo/
-
-# Prisma
-backend/src/prisma/migrations/
 
 # Logs
 *.log
@@ -36,10 +31,6 @@ Thumbs.db
 !.vscode/extensions.json
 .idea/
 
-# Mobile
-mobile/.expo/
-mobile/ios/
-mobile/android/
 *.jks
 *.p8
 *.p12
