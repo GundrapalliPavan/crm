@@ -6,6 +6,8 @@ export interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   /** Rendered below the input, replaced by `error` when present. */
   helperText?: string;
   error?: string;
+  /** Keeps the label as the field's accessible name but hides it visually - for dense table-cell layouts with a column header already labelling the field. */
+  hideLabel?: boolean;
 }
 
 /**
@@ -18,7 +20,7 @@ export interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
  * state for assistive technology that surfaces it independently.
  */
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
-  { label, helperText, error, id, className, required, ...props },
+  { label, helperText, error, hideLabel, id, className, required, ...props },
   ref,
 ) {
   const generatedId = useId();
@@ -28,7 +30,10 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={inputId} className="text-sm font-medium text-[var(--color-text-primary)]">
+      <label
+        htmlFor={inputId}
+        className={hideLabel ? 'sr-only' : 'text-sm font-medium text-[var(--color-text-primary)]'}
+      >
         {label}
         {required && <span aria-hidden="true"> *</span>}
       </label>

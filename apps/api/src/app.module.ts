@@ -2,6 +2,7 @@ import { Module, ValidationPipe } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './common/audit/audit.module';
+import { DocumentsModule } from './common/documents/documents.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingModule } from './common/logging/logging.module';
 import { validationPipeOptions } from './common/pipes/validation-exception.factory';
@@ -11,9 +12,25 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
+import { BrandsModule } from './modules/brands/brands.module';
+import { CompaniesModule } from './modules/companies/companies.module';
+import { ContactsModule } from './modules/contacts/contacts.module';
+import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
+import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module';
 import { HealthModule } from './modules/health/health.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { LeadSourcesModule } from './modules/lead-sources/lead-sources.module';
+import { LeadsModule } from './modules/leads/leads.module';
+import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
+import { ProductsModule } from './modules/products/products.module';
+import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
+import { QuotationsModule } from './modules/quotations/quotations.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { UnitsModule } from './modules/units/units.module';
 import { UsersModule } from './modules/users/users.module';
+import { WarehousesModule } from './modules/warehouses/warehouses.module';
 
 /**
  * Root module.
@@ -39,10 +56,27 @@ import { UsersModule } from './modules/users/users.module';
     DatabaseModule,
     RequestContextModule,
     AuditModule,
+    DocumentsModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     AuthModule,
     UsersModule,
     RolesModule,
+    LeadSourcesModule,
+    LeadsModule,
+    FollowUpsModule,
+    ContactsModule,
+    CompaniesModule,
+    UnitsModule,
+    ProductCategoriesModule,
+    BrandsModule,
+    ProductsModule,
+    WarehousesModule,
+    InventoryModule,
+    QuotationsModule,
+    SalesOrdersModule,
+    SuppliersModule,
+    PurchaseOrdersModule,
+    GoodsReceiptsModule,
     HealthModule,
   ],
   providers: [

@@ -1,0 +1,392 @@
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { ApiCollectionResponse, Quotation, QuotationSummary, SalesOrder } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
+import { BusinessRuleError, ConflictError, NotFoundError } from '../../common/errors/app-error';
+import { calculateDocumentTotals, resolveLine, type ProductForLineResolution } from '../../common/commercial/quotation-line-calculator';
+import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
+import { PrismaService } from '../../database/prisma.service';
+import { SALES_ORDER_DETAIL_INCLUDE, toSalesOrder } from '../sales-orders/sales-order.mapper';
+import { CancelQuotationDto } from './dto/cancel-quotation.dto';
+import { CreateQuotationDto } from './dto/create-quotation.dto';
+import { ListQuotationsQuery } from './dto/list-quotations.query';
+import { QuotationItemDto } from './dto/quotation-item.dto';
+import { UpdateQuotationDto } from './dto/update-quotation.dto';
+import {
+  QUOTATION_DETAIL_INCLUDE,
+  QUOTATION_SUMMARY_INCLUDE,
+  toQuotation,
+  toQuotationSummary,
+  type QuotationWithDetailRelations,
+} from './quotation.mapper';
+
+const PRODUCT_LINE_INCLUDE = { unit: { select: { symbol: true } } } as const;
+
+@Injectable()
+export class QuotationsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: DocumentNumberingService,
+    private readonly auditService: AuditService,
+  ) {}
+
+  async list(query: ListQuotationsQuery): Promise<ApiCollectionResponse<QuotationSummary>> {
+    const where: Prisma.QuotationWhereInput = {};
+    if (query.status) where.status = query.status;
+    if (query.customerCompanyId) where.customerCompanyId = query.customerCompanyId;
+    if (query.q) where.quotationNumber = { contains: query.q.trim(), mode: 'insensitive' };
+
+    const [rows, totalItems] = await Promise.all([
+      this.prisma.quotation.findMany({
+        where,
+        include: QUOTATION_SUMMARY_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.quotation.count({ where }),
+    ]);
+
+    return {
+      data: rows.map(toQuotationSummary),
+      meta: {
+        page: query.page,
+        pageSize: query.pageSize,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / query.pageSize)),
+      },
+    };
+  }
+
+  async getById(id: string): Promise<Quotation> {
+    const quotation = await this.getDetailOrThrow(id);
+    return toQuotation(quotation);
+  }
+
+  async create(dto: CreateQuotationDto, actorUserId: string): Promise<Quotation> {
+    await this.assertCompanyExists(dto.customerCompanyId);
+    if (dto.contactId) await this.assertContactExists(dto.contactId);
+    if (dto.leadId) await this.assertLeadExists(dto.leadId);
+
+    const lines = await this.resolveItems(dto.items);
+    const totals = calculateDocumentTotals(lines);
+
+    const quotation = await this.prisma.$transaction(async (tx) => {
+      const quotationNumber = await this.numbering.next(tx, 'quotation', 'QT');
+
+      const created = await tx.quotation.create({
+        data: {
+          quotationNumber,
+          customerCompanyId: dto.customerCompanyId,
+          contactId: dto.contactId,
+          leadId: dto.leadId,
+          quotationDate: new Date(dto.quotationDate),
+          validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+          subtotal: totals.subtotal,
+          discountAmount: totals.discountAmount,
+          taxAmount: totals.taxAmount,
+          totalAmount: totals.totalAmount,
+          notes: dto.notes,
+          terms: dto.terms,
+          ownerId: actorUserId,
+          createdBy: actorUserId,
+          items: {
+            create: lines.map((line, index) => ({ ...line, sortOrder: index })),
+          },
+        },
+        include: QUOTATION_DETAIL_INCLUDE,
+      });
+
+      return created;
+    });
+
+    return toQuotation(quotation);
+  }
+
+  async update(id: string, dto: UpdateQuotationDto): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    if (existing.status !== 'draft') {
+      throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a draft quotation can be edited.');
+    }
+
+    if (dto.customerCompanyId) await this.assertCompanyExists(dto.customerCompanyId);
+    if (dto.contactId) await this.assertContactExists(dto.contactId);
+    if (dto.leadId) await this.assertLeadExists(dto.leadId);
+
+    const lines = dto.items ? await this.resolveItems(dto.items) : undefined;
+    const totals = lines ? calculateDocumentTotals(lines) : undefined;
+
+    const quotation = await this.prisma.$transaction(async (tx) => {
+      if (lines) {
+        await tx.quotationItem.deleteMany({ where: { quotationId: id } });
+      }
+
+      return tx.quotation.update({
+        where: { id },
+        data: {
+          customerCompanyId: dto.customerCompanyId,
+          contactId: dto.contactId,
+          leadId: dto.leadId,
+          quotationDate: dto.quotationDate ? new Date(dto.quotationDate) : undefined,
+          validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+          notes: dto.notes,
+          terms: dto.terms,
+          ...(totals && lines
+            ? {
+                subtotal: totals.subtotal,
+                discountAmount: totals.discountAmount,
+                taxAmount: totals.taxAmount,
+                totalAmount: totals.totalAmount,
+                items: { create: lines.map((line, index) => ({ ...line, sortOrder: index })) },
+              }
+            : {}),
+        },
+        include: QUOTATION_DETAIL_INCLUDE,
+      });
+    });
+
+    return toQuotation(quotation);
+  }
+
+  /** SALES.md sections 34-35: a discount always requires approval - no configurable threshold exists yet. */
+  async submit(id: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(existing.status, ['draft'], 'submitted for approval');
+
+    const nextStatus = existing.discountAmount.greaterThan(0) ? 'approval_pending' : 'approved';
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: nextStatus },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    return toQuotation(quotation);
+  }
+
+  async approve(id: string, actorUserId: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(existing.status, ['approval_pending'], 'approved');
+
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'approved' },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    await this.auditService.record({
+      actorUserId,
+      action: 'quotation.approved',
+      entityType: 'quotation',
+      entityId: id,
+      metadata: { totalAmount: existing.totalAmount.toString(), discountAmount: existing.discountAmount.toString() },
+    });
+    return toQuotation(quotation);
+  }
+
+  async rejectApproval(id: string, actorUserId: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(existing.status, ['approval_pending'], 'sent back to draft');
+
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'draft' },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    await this.auditService.record({
+      actorUserId,
+      action: 'quotation.approval_rejected',
+      entityType: 'quotation',
+      entityId: id,
+    });
+    return toQuotation(quotation);
+  }
+
+  async send(id: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(existing.status, ['approved'], 'sent');
+
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'sent' },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    return toQuotation(quotation);
+  }
+
+  async accept(id: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(existing.status, ['sent', 'negotiation'], 'accepted');
+
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'accepted' },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    return toQuotation(quotation);
+  }
+
+  async reject(id: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(existing.status, ['sent', 'negotiation'], 'rejected');
+
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'rejected' },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    return toQuotation(quotation);
+  }
+
+  async cancel(id: string, dto: CancelQuotationDto, actorUserId: string): Promise<Quotation> {
+    const existing = await this.getDetailOrThrow(id);
+    this.assertStatus(
+      existing.status,
+      ['draft', 'approval_pending', 'approved', 'sent', 'negotiation'],
+      'cancelled',
+    );
+
+    const quotation = await this.prisma.quotation.update({
+      where: { id },
+      data: { status: 'cancelled', notes: appendNote(existing.notes, `Cancelled: ${dto.reason}`) },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
+    await this.auditService.record({
+      actorUserId,
+      action: 'quotation.cancelled',
+      entityType: 'quotation',
+      entityId: id,
+      metadata: { reason: dto.reason },
+    });
+    return toQuotation(quotation);
+  }
+
+  /**
+   * API.md section 67: converts an accepted quotation into a sales order
+   * without requiring the client to recreate every line item, preserving
+   * traceability via `SalesOrder.quotationId` / `SalesOrderItem.quotationItemId`.
+   * The quotation's own status is left `accepted` - it represents "the
+   * customer said yes", not "an order exists", and a quotation can only be
+   * converted once (checked below).
+   */
+  async convertToOrder(id: string, actorUserId: string): Promise<SalesOrder> {
+    const quotation = await this.getDetailOrThrow(id);
+    this.assertStatus(quotation.status, ['accepted'], 'converted to a sales order');
+
+    const existingOrder = await this.prisma.salesOrder.findFirst({
+      where: { quotationId: id, status: { not: 'cancelled' } },
+    });
+    if (existingOrder) {
+      throw new ConflictError('This quotation has already been converted to a sales order.');
+    }
+
+    const order = await this.prisma.$transaction(async (tx) => {
+      const salesOrderNumber = await this.numbering.next(tx, 'sales_order', 'SO');
+
+      return tx.salesOrder.create({
+        data: {
+          salesOrderNumber,
+          quotationId: quotation.id,
+          customerCompanyId: quotation.customerCompanyId,
+          contactId: quotation.contactId,
+          orderDate: new Date(),
+          subtotal: quotation.subtotal,
+          discountAmount: quotation.discountAmount,
+          taxAmount: quotation.taxAmount,
+          totalAmount: quotation.totalAmount,
+          notes: quotation.notes,
+          terms: quotation.terms,
+          ownerId: quotation.ownerId,
+          createdBy: actorUserId,
+          items: {
+            create: quotation.items.map((item, index) => ({
+              productId: item.productId,
+              quotationItemId: item.id,
+              skuSnapshot: item.skuSnapshot,
+              productNameSnapshot: item.productNameSnapshot,
+              descriptionSnapshot: item.descriptionSnapshot,
+              hsnSnapshot: item.hsnSnapshot,
+              unitSnapshot: item.unitSnapshot,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              discountPercentage: item.discountPercentage,
+              discountAmount: item.discountAmount,
+              taxRate: item.taxRate,
+              taxAmount: item.taxAmount,
+              lineTotal: item.lineTotal,
+              sortOrder: index,
+            })),
+          },
+        },
+        include: SALES_ORDER_DETAIL_INCLUDE,
+      });
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'quotation.converted_to_order',
+      entityType: 'quotation',
+      entityId: id,
+      metadata: { salesOrderId: order.id, salesOrderNumber: order.salesOrderNumber },
+    });
+
+    return toSalesOrder(order);
+  }
+
+  private async getDetailOrThrow(id: string): Promise<QuotationWithDetailRelations> {
+    const quotation = await this.prisma.quotation.findUnique({ where: { id }, include: QUOTATION_DETAIL_INCLUDE });
+    if (!quotation) {
+      throw new NotFoundError('Quotation not found.');
+    }
+    return quotation;
+  }
+
+  private assertStatus(current: string, allowed: string[], action: string): void {
+    if (!allowed.includes(current)) {
+      throw new BusinessRuleError(
+        'INVALID_STATE_TRANSITION',
+        `A quotation in "${current}" status cannot be ${action}.`,
+      );
+    }
+  }
+
+  private async resolveItems(items: QuotationItemDto[]) {
+    const productIds = [...new Set(items.map((item) => item.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      include: PRODUCT_LINE_INCLUDE,
+    });
+    const byId = new Map(products.map((product) => [product.id, product as ProductForLineResolution]));
+
+    return items.map((item) => {
+      const product = byId.get(item.productId);
+      if (!product) {
+        throw new NotFoundError(`Product ${item.productId} not found.`);
+      }
+      return resolveLine(product, item);
+    });
+  }
+
+  private async assertCompanyExists(id: string): Promise<void> {
+    const company = await this.prisma.company.findUnique({ where: { id } });
+    if (!company) {
+      throw new NotFoundError('Customer company not found.');
+    }
+  }
+
+  private async assertContactExists(id: string): Promise<void> {
+    const contact = await this.prisma.contact.findUnique({ where: { id } });
+    if (!contact) {
+      throw new NotFoundError('Contact not found.');
+    }
+  }
+
+  private async assertLeadExists(id: string): Promise<void> {
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) {
+      throw new NotFoundError('Lead not found.');
+    }
+  }
+
+}
+
+function appendNote(existing: string | null, addition: string): string {
+  return existing ? `${existing}\n${addition}` : addition;
+}

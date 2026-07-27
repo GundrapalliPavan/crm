@@ -66,6 +66,44 @@ enum LeadPriority {
   @@map("lead_priority")
 }
 
+/// CRM.md section 13. Distinct from CompanyType: this classifies the lead's
+/// business at enquiry time, before any Company record exists.
+enum LeadType {
+  dealer
+  distributor
+  retailer
+  builder
+  contractor
+  architect
+  electrician
+  corporate_customer
+  project
+  other
+
+  @@map("lead_type")
+}
+
+/// CRM.md section 49. A fixed enum for now ("should eventually be
+/// configurable" - not yet justified as its own reference table the way
+/// LeadSource is, since sources drive marketing-effectiveness reporting and
+/// lost reasons do not).
+enum LeadLostReason {
+  price
+  competitor
+  no_requirement
+  no_response
+  budget
+  product_availability
+  delivery_timeline
+  credit_terms
+  location
+  duplicate
+  invalid_lead
+  other
+
+  @@map("lead_lost_reason")
+}
+
 /// CRM.md section 28. `overdue` is intentionally absent: DATABASE.md section 30
 /// derives it from scheduled_at plus completion state rather than persisting it.
 enum FollowUpStatus {
@@ -489,33 +527,40 @@ model LeadSource {
 /// DATABASE.md section 24. A converted lead is retained, not deleted
 /// (DATABASE.md section 27), so conversion targets are nullable links.
 model Lead {
-  id                 String       @id @default(uuid()) @db.Uuid
-  firstName          String       @map("first_name") @db.VarChar(100)
-  lastName           String?      @map("last_name") @db.VarChar(100)
-  companyName        String?      @map("company_name") @db.VarChar(200)
-  phone              String?      @db.VarChar(20)
+  id                 String          @id @default(uuid()) @db.Uuid
+  firstName          String          @map("first_name") @db.VarChar(100)
+  lastName           String?         @map("last_name") @db.VarChar(100)
+  companyName        String?         @map("company_name") @db.VarChar(200)
+  phone              String?         @db.VarChar(20)
   /// Canonical E.164 form used for search and duplicate detection
   /// (DATABASE.md sections 132-133). Populated by the application layer.
-  phoneNormalized    String?      @map("phone_normalized") @db.VarChar(20)
-  alternatePhone     String?      @map("alternate_phone") @db.VarChar(20)
-  email              String?      @db.VarChar(255)
-  emailNormalized    String?      @map("email_normalized") @db.VarChar(255)
-  sourceId           String?      @map("source_id") @db.Uuid
-  status             LeadStatus   @default(new)
-  priority           LeadPriority @default(medium)
-  assignedTo         String?      @map("assigned_to") @db.Uuid
-  assignedTeamId     String?      @map("assigned_team_id") @db.Uuid
-  estimatedValue     Decimal?     @map("estimated_value") @db.Decimal(18, 2)
-  currencyCode       String       @default("INR") @map("currency_code") @db.Char(3)
+  phoneNormalized    String?         @map("phone_normalized") @db.VarChar(20)
+  alternatePhone     String?         @map("alternate_phone") @db.VarChar(20)
+  email              String?         @db.VarChar(255)
+  emailNormalized    String?         @map("email_normalized") @db.VarChar(255)
+  sourceId           String?         @map("source_id") @db.Uuid
+  leadType           LeadType?       @map("lead_type")
+  status             LeadStatus      @default(new)
+  priority           LeadPriority    @default(medium)
+  assignedTo         String?         @map("assigned_to") @db.Uuid
+  assignedTeamId     String?         @map("assigned_team_id") @db.Uuid
+  estimatedValue     Decimal?        @map("estimated_value") @db.Decimal(18, 2)
+  currencyCode       String          @default("INR") @map("currency_code") @db.Char(3)
   notes              String?
-  nextFollowUpAt     DateTime?    @map("next_follow_up_at") @db.Timestamptz(6)
-  convertedAt        DateTime?    @map("converted_at") @db.Timestamptz(6)
-  convertedContactId String?      @map("converted_contact_id") @db.Uuid
-  convertedCompanyId String?      @map("converted_company_id") @db.Uuid
-  createdBy          String?      @map("created_by") @db.Uuid
-  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt         DateTime?    @map("archived_at") @db.Timestamptz(6)
+  nextFollowUpAt     DateTime?       @map("next_follow_up_at") @db.Timestamptz(6)
+  convertedAt        DateTime?       @map("converted_at") @db.Timestamptz(6)
+  convertedContactId String?         @map("converted_contact_id") @db.Uuid
+  convertedCompanyId String?         @map("converted_company_id") @db.Uuid
+  /// Reflects only the most recent loss - full history of every
+  /// lost/reopened cycle lives in LeadActivity, not here (CRM.md section 51:
+  /// "do not erase historical outcomes"). Cleared on reopen.
+  lostReason         LeadLostReason? @map("lost_reason")
+  lostNotes          String?         @map("lost_notes")
+  lostAt             DateTime?       @map("lost_at") @db.Timestamptz(6)
+  createdBy          String?         @map("created_by") @db.Uuid
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt         DateTime?       @map("archived_at") @db.Timestamptz(6)
 
   source           LeadSource? @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   assignee         User?       @relation("LeadAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
@@ -536,6 +581,7 @@ model Lead {
   @@index([emailNormalized])
   @@index([sourceId])
   @@index([assignedTeamId])
+  @@index([leadType])
   // Serves the "my open leads" screen (DATABASE.md section 109).
   @@index([assignedTo, status, createdAt])
   @@map("leads")
