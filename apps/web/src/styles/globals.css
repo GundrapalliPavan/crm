@@ -47,6 +47,28 @@
   --color-danger-border: #fecaca;
   --color-danger-text: #b91c1c;
 
+  /*
+   * Status/badge surfaces (COLORS.md sections 20-27, 53). Classified by
+   * meaning (neutral/positive/attention/critical/informational), not one
+   * color per status value - section 21 explicitly warns against a unique
+   * color per workflow state.
+   */
+  --color-neutral-bg: #f1f5f9;
+  --color-neutral-border: #e2e8f0;
+  --color-neutral-text: #475569;
+
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #bbf7d0;
+  --color-success-text: #15803d;
+
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-text: #b45309;
+
+  --color-info-bg: #eff6ff;
+  --color-info-border: #bfdbfe;
+  --color-info-text: #1d4ed8;
+
   /* Radius (COMPONENTS.md section 16) */
   --radius-input: 6px;
   --radius-button: 6px;

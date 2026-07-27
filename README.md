@@ -1,13 +1,16 @@
 # CRM Platform
 
-A modular, multi-tenant CRM for an electrical products distributor, covering leads, site visits,
+A modular CRM for a single-organization electrical products distributor, covering leads, site visits,
 customers, orders, inventory, purchasing, and billing - built on one NestJS + Prisma + PostgreSQL
 API, initially served by a responsive React web application.
 
-This repository is in **Phase 0**: workspace, tooling, database schema, and an authentication/RBAC
-foundation exist; no business modules (Leads, Contacts, Companies, Sales, ...) have been implemented
-yet. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the technical foundation specification and
-[`PROJECT.md`](PROJECT.md) for the product specification.
+The foundation (workspace, tooling, database schema, authentication/RBAC) is complete. CRM & Lead
+Management (Module 1: leads, contacts, companies, follow-ups), the Product Catalog (Module 2:
+products, categories, brands, units), Inventory (Module 3: warehouses, stock balances, movement
+ledger, adjustments, transfers), Sales (Module 4: opportunities, quotations, sales orders) and
+Purchase (Module 5: supplier profile, purchase orders, goods receipts) are implemented. Billing,
+Communication and Reports do not exist yet. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the
+technical foundation specification and [`PROJECT.md`](PROJECT.md) for the product specification.
 
 ## Structure
 
