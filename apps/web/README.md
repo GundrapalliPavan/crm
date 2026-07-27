@@ -56,9 +56,11 @@ src/
 Authentication (login, protected routes), Module 1 (CRM & Lead Management - Leads, Contacts,
 Companies, Follow-ups), Module 2 (Product Catalog - Products, Categories, Brands), Module 3
 (Inventory - Stock, Stock Movements, Warehouses, adjustments/transfers), Module 4 (Sales -
-Opportunities, Quotations, Sales Orders) and Module 5 (Purchase - Supplier profile on the Company
-detail page, Purchase Orders, Goods Receipts) complete, with a real navigation shell
+Opportunities, Quotations, Sales Orders), Module 5 (Purchase - Supplier profile on the Company
+detail page, Purchase Orders, Goods Receipts) and Module 6 (Billing - Customer profile on the
+Company detail page, Invoices, Payments) complete, with a real navigation shell
 (`components/layout`). No other business modules exist yet.
 
 Standalone Sales Order creation is deferred - orders are created via "Convert to Sales Order" on an
-accepted quotation, matching API.md's recommended flow.
+accepted quotation, matching API.md's recommended flow. Standalone Invoice creation follows the same
+pattern - invoices are raised via "Create Invoice" on a confirmed Sales Order.

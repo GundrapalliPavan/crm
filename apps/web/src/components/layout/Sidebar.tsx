@@ -13,9 +13,9 @@ interface NavSection {
 
 /**
  * Primary navigation (UX.md sections 13-15). Only built modules are listed -
- * Billing, Reports, Team and Settings do not exist yet, and section 13
- * explicitly warns against padding navigation out to look comprehensive
- * before the modules behind it exist.
+ * Reports, Team and Settings do not exist yet, and section 13 explicitly
+ * warns against padding navigation out to look comprehensive before the
+ * modules behind it exist.
  */
 const SECTIONS: NavSection[] = [
   {
@@ -56,6 +56,13 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/purchase-orders', label: 'Purchase Orders' },
       { to: '/goods-receipts', label: 'Goods Receipts' },
+    ],
+  },
+  {
+    label: 'Billing',
+    items: [
+      { to: '/invoices', label: 'Invoices' },
+      { to: '/payments', label: 'Payments' },
     ],
   },
 ];

@@ -103,6 +103,7 @@ export class CompaniesService {
         website: dto.website,
         gstin: dto.gstin,
         taxIdentifier: dto.taxIdentifier,
+        stateCode: dto.stateCode,
         ownerId: dto.ownerId,
         creditLimit: dto.creditLimit,
         paymentTermsDays: dto.paymentTermsDays,

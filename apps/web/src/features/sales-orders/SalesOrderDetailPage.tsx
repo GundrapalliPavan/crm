@@ -1,23 +1,30 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import type { SalesOrderStockWarning } from '@crm/types';
+import type { CreditLimitWarning, SalesOrderStockWarning } from '@crm/types';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { CancelWithReasonDialog } from '@/components/common/CancelWithReasonDialog';
+import { useCreateInvoiceFromSalesOrder } from '@/features/invoices/useInvoices';
 import { ApiError } from '@/lib/api/api-error';
+import { useAuth } from '@/lib/auth/useAuth';
 import { salesOrderStatusLabel, salesOrderStatusTone } from './labels';
 import { useCancelSalesOrder, useCompleteSalesOrder, useConfirmSalesOrder, useSalesOrder } from './useSalesOrders';
+
+const INVOICEABLE_STATUSES = ['confirmed', 'processing', 'partially_fulfilled', 'fulfilled'];
 
 /** UX.md sections 42-43: Customer/Status/Products/Quantity/Stock/Value/Delivery/Source Quotation, workflow visually clear. */
 export function SalesOrderDetailPage() {
   const { salesOrderId } = useParams<{ salesOrderId: string }>();
   const navigate = useNavigate();
+  const { can } = useAuth();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<SalesOrderStockWarning[] | null>(null);
+  const [creditWarning, setCreditWarning] = useState<{ invoiceId: string; warning: CreditLimitWarning } | null>(null);
 
   const { data: order, isLoading, isError } = useSalesOrder(salesOrderId ?? '');
   const confirm = useConfirmSalesOrder(salesOrderId ?? '');
+  const createInvoice = useCreateInvoiceFromSalesOrder(salesOrderId ?? '');
   const cancel = useCancelSalesOrder(salesOrderId ?? '');
   const complete = useCompleteSalesOrder(salesOrderId ?? '');
 
@@ -47,6 +54,7 @@ export function SalesOrderDetailPage() {
   const canCancel = ['draft', 'confirmation_pending', 'confirmed', 'processing'].includes(status);
   const canConfirm = status === 'draft' || status === 'confirmation_pending';
   const canComplete = status === 'confirmed' || status === 'processing' || status === 'partially_fulfilled';
+  const canInvoice = INVOICEABLE_STATUSES.includes(status) && can('invoice.create');
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-6">
@@ -94,6 +102,27 @@ export function SalesOrderDetailPage() {
                 Mark Fulfilled
               </Button>
             )}
+            {canInvoice && (
+              <Button
+                size="sm"
+                variant="secondary"
+                isLoading={createInvoice.isPending}
+                onClick={() =>
+                  runAction(
+                    () => createInvoice.mutateAsync({}),
+                    (response) => {
+                      if (response.creditWarning) {
+                        setCreditWarning({ invoiceId: response.invoice.id, warning: response.creditWarning });
+                      } else {
+                        navigate(`/invoices/${response.invoice.id}`);
+                      }
+                    },
+                  )
+                }
+              >
+                Create Invoice
+              </Button>
+            )}
             {canCancel && (
               <Button variant="secondary" size="sm" onClick={() => setIsCancelOpen(true)}>
                 Cancel
@@ -124,6 +153,25 @@ export function SalesOrderDetailPage() {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {creditWarning && (
+          <div
+            role="alert"
+            className="mt-4 rounded-[var(--radius-input)] border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-text)]"
+          >
+            <p className="font-medium">
+              Invoice created, but this puts the customer over their credit limit of {creditWarning.warning.creditLimit}{' '}
+              (outstanding would become {creditWarning.warning.outstandingAfter}).
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate(`/invoices/${creditWarning.invoiceId}`)}
+              className="mt-2 font-medium underline"
+            >
+              View Invoice
+            </button>
           </div>
         )}
       </div>

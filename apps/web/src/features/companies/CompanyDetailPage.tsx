@@ -4,7 +4,9 @@ import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { ContactCreateModal } from '@/features/contacts/ContactCreateModal';
+import { CustomerProfileSection } from '@/features/customers/CustomerProfileSection';
 import { SupplierProfileSection } from '@/features/suppliers/SupplierProfileSection';
+import { CompanyEditModal } from './CompanyEditModal';
 import { companyTypeLabel } from './labels';
 import { useArchiveCompany, useCompany, useCompanyContacts } from './useCompanies';
 
@@ -21,6 +23,7 @@ export function CompanyDetailPage() {
   const archiveCompany = useArchiveCompany();
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   if (isLoading) {
     return <p className="p-6 text-sm text-[var(--color-text-secondary)]">Loading company…</p>;
@@ -47,9 +50,14 @@ export function CompanyDetailPage() {
               {!company.isActive && <Badge tone="critical">Inactive</Badge>}
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setIsArchiveOpen(true)}>
-            Archive
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setIsEditOpen(true)}>
+              Edit
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setIsArchiveOpen(true)}>
+              Archive
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -67,6 +75,10 @@ export function CompanyDetailPage() {
           <p className="text-[var(--color-text-primary)]">{company.gstin ?? '—'}</p>
         </div>
         <div>
+          <p className="text-[var(--color-text-secondary)]">GST state code</p>
+          <p className="text-[var(--color-text-primary)]">{company.stateCode ?? '—'}</p>
+        </div>
+        <div>
           <p className="text-[var(--color-text-secondary)]">Owner</p>
           <p className="text-[var(--color-text-primary)]">
             {company.owner ? `${company.owner.firstName} ${company.owner.lastName}` : '—'}
@@ -74,6 +86,7 @@ export function CompanyDetailPage() {
         </div>
       </div>
 
+      {company.isCustomer && <CustomerProfileSection companyId={company.id} />}
       {company.isSupplier && <SupplierProfileSection companyId={company.id} />}
 
       <section>
@@ -114,6 +127,10 @@ export function CompanyDetailPage() {
           onConfirm={() => void archiveCompany.mutateAsync(company.id).then(() => navigate('/companies'))}
           onCancel={() => setIsArchiveOpen(false)}
         />
+      )}
+
+      {isEditOpen && (
+        <CompanyEditModal company={company} onClose={() => setIsEditOpen(false)} onUpdated={() => setIsEditOpen(false)} />
       )}
 
       {isContactModalOpen && (

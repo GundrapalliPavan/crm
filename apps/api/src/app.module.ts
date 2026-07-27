@@ -15,12 +15,15 @@ import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
 import { BrandsModule } from './modules/brands/brands.module';
 import { CompaniesModule } from './modules/companies/companies.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
+import { CustomersModule } from './modules/customers/customers.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module';
 import { HealthModule } from './modules/health/health.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
 import { LeadSourcesModule } from './modules/lead-sources/lead-sources.module';
 import { LeadsModule } from './modules/leads/leads.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
 import { ProductsModule } from './modules/products/products.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
@@ -77,6 +80,9 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     SuppliersModule,
     PurchaseOrdersModule,
     GoodsReceiptsModule,
+    CustomersModule,
+    InvoicesModule,
+    PaymentsModule,
     HealthModule,
   ],
   providers: [

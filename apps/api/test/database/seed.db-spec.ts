@@ -16,15 +16,16 @@ describe('reference data seed', () => {
   });
 
   async function countReferenceData() {
-    const [permissions, roles, rolePermissions, units, leadSources] = await Promise.all([
+    const [permissions, roles, rolePermissions, units, leadSources, applicationSettings] = await Promise.all([
       testPrisma.permission.count(),
       testPrisma.role.count(),
       testPrisma.rolePermission.count(),
       testPrisma.unit.count(),
       testPrisma.leadSource.count(),
+      testPrisma.applicationSetting.count(),
     ]);
 
-    return { permissions, roles, rolePermissions, units, leadSources };
+    return { permissions, roles, rolePermissions, units, leadSources, applicationSettings };
   }
 
   it('creates reference data on a fresh database', async () => {
@@ -36,8 +37,24 @@ describe('reference data seed', () => {
     expect(counts.roles).toBeGreaterThan(0);
     expect(counts.units).toBeGreaterThan(0);
     expect(counts.leadSources).toBeGreaterThan(0);
+    expect(counts.applicationSettings).toBeGreaterThan(0);
     // Administrator holds the full permission set.
     expect(counts.rolePermissions).toBe(counts.permissions);
+  });
+
+  it('never overwrites a reconfigured application setting on reseed', async () => {
+    await seedReferenceData(testPrisma);
+    await testPrisma.applicationSetting.update({
+      where: { key: 'billing.seller_state_code' },
+      data: { value: '27' },
+    });
+
+    await seedReferenceData(testPrisma);
+
+    const setting = await testPrisma.applicationSetting.findUniqueOrThrow({
+      where: { key: 'billing.seller_state_code' },
+    });
+    expect(setting.value).toBe('27');
   });
 
   it('produces no duplicates when run a second time', async () => {

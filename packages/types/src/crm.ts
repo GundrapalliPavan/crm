@@ -281,6 +281,8 @@ export interface Company {
   website: string | null;
   gstin: string | null;
   taxIdentifier: string | null;
+  /** Normalised GST state code (e.g. "36"), used to determine CGST+SGST vs IGST on invoices. */
+  stateCode: string | null;
   owner: UserSummary | null;
   creditLimit: string | null;
   paymentTermsDays: number | null;
@@ -299,6 +301,7 @@ export interface CreateCompanyRequest {
   website?: string;
   gstin?: string;
   taxIdentifier?: string;
+  stateCode?: string;
   ownerId?: string;
   creditLimit?: string;
   paymentTermsDays?: number;
