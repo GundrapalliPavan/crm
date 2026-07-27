@@ -47,6 +47,7 @@ export function CompanyCreateModal({ onClose, onCreated }: CompanyCreateModalPro
       phone: values.phone || undefined,
       email: values.email || undefined,
       gstin: values.gstin || undefined,
+      stateCode: values.stateCode || undefined,
       isCustomer: values.isCustomer,
       isSupplier: values.isSupplier,
     });
@@ -88,6 +89,11 @@ export function CompanyCreateModal({ onClose, onCreated }: CompanyCreateModalPro
           <TextField label="Phone" type="tel" {...register('phone')} />
           <TextField label="Email" type="email" error={errors.email?.message} {...register('email')} />
           <TextField label="GSTIN" {...register('gstin')} />
+          <TextField
+            label="GST state code"
+            helperText='2-digit code, e.g. "36" for Telangana - used to determine CGST/SGST vs IGST on invoices.'
+            {...register('stateCode')}
+          />
 
           <div className="flex gap-4">
             <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">

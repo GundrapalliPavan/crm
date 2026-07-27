@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -48,6 +49,11 @@ export class UpdateCompanyDto {
   @IsString()
   @MaxLength(50)
   taxIdentifier?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{2}$/, { message: 'stateCode must be a 2-digit GST state code, e.g. "36".' })
+  stateCode?: string;
 
   @IsOptional()
   @IsUUID()

@@ -120,6 +120,29 @@ const UNITS: ReadonlyArray<{ name: string; symbol: string; decimalAllowed: boole
   { name: 'Kilogram', symbol: 'kg', decimalAllowed: true },
 ];
 
+/**
+ * BILLING.md sections 17-19: tax treatment (CGST+SGST vs IGST) must be
+ * derived from configuration, not user guesswork. This is the one piece of
+ * "Applicable Jurisdiction" tax configuration the schema doesn't otherwise
+ * have a home for - the business's own GST state code. "36" (Telangana) is
+ * an example default matching BILLING.md's own numbering example
+ * ("INV/HYD/..."); a real deployment should update this row for its actual
+ * registered state.
+ */
+const APPLICATION_SETTINGS: ReadonlyArray<{
+  key: string;
+  value: string;
+  dataType: 'string' | 'number' | 'boolean' | 'json';
+  description: string;
+}> = [
+  {
+    key: 'billing.seller_state_code',
+    value: '36',
+    dataType: 'string',
+    description: 'GST state code of the selling entity, used to determine CGST+SGST vs IGST on invoices.',
+  },
+];
+
 /** DATABASE.md section 25. */
 const LEAD_SOURCES: ReadonlyArray<{ name: string; description: string }> = [
   { name: 'Website', description: 'Enquiry submitted through the website.' },
@@ -182,6 +205,21 @@ async function seedUnits(prisma: PrismaClient): Promise<void> {
   }
 }
 
+/**
+ * Unlike Units/Lead Sources, this is deployment-specific configuration a
+ * real business may reconfigure after go-live - so, like document sequences,
+ * this only creates the row once and never overwrites it on a later reseed.
+ */
+async function seedApplicationSettings(prisma: PrismaClient): Promise<void> {
+  for (const setting of APPLICATION_SETTINGS) {
+    await prisma.applicationSetting.upsert({
+      where: { key: setting.key },
+      update: {},
+      create: setting,
+    });
+  }
+}
+
 async function seedLeadSources(prisma: PrismaClient): Promise<void> {
   for (const source of LEAD_SOURCES) {
     await prisma.leadSource.upsert({
@@ -203,6 +241,7 @@ export async function seedReferenceData(prisma: PrismaClient): Promise<void> {
   await grantAdministratorAllPermissions(prisma);
   await seedUnits(prisma);
   await seedLeadSources(prisma);
+  await seedApplicationSettings(prisma);
 }
 
 async function main(): Promise<void> {
@@ -213,7 +252,8 @@ async function main(): Promise<void> {
     await seedReferenceData(prisma);
     console.log(
       `Seeded ${PERMISSIONS.length} permissions, ${ROLES.length} roles, ` +
-        `${UNITS.length} units, ${LEAD_SOURCES.length} lead sources.`,
+        `${UNITS.length} units, ${LEAD_SOURCES.length} lead sources, ` +
+        `${APPLICATION_SETTINGS.length} application settings.`,
     );
   } finally {
     await prisma.$disconnect();

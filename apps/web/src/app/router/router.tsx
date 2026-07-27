@@ -14,9 +14,14 @@ import { GoodsReceiptListPage } from '@/features/goods-receipts/GoodsReceiptList
 import { InventoryListPage } from '@/features/inventory/InventoryListPage';
 import { ProductStockDetailPage } from '@/features/inventory/ProductStockDetailPage';
 import { StockMovementsPage } from '@/features/inventory/StockMovementsPage';
+import { InvoiceDetailPage } from '@/features/invoices/InvoiceDetailPage';
+import { InvoiceListPage } from '@/features/invoices/InvoiceListPage';
 import { LeadDetailPage } from '@/features/leads/LeadDetailPage';
 import { LeadListPage } from '@/features/leads/LeadListPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { PaymentCreatePage } from '@/features/payments/PaymentCreatePage';
+import { PaymentDetailPage } from '@/features/payments/PaymentDetailPage';
+import { PaymentListPage } from '@/features/payments/PaymentListPage';
 import { ProductCategoriesPage } from '@/features/product-categories/ProductCategoriesPage';
 import { ProductDetailPage } from '@/features/products/ProductDetailPage';
 import { ProductListPage } from '@/features/products/ProductListPage';
@@ -34,8 +39,8 @@ import { WarehousesPage } from '@/features/warehouses/WarehousesPage';
 /**
  * Route table.
  *
- * Only CRM, Catalog, Inventory, Sales and Purchase routes exist below "/" -
- * Billing, Reports, Team and Settings are separate modules not yet built
+ * Only CRM, Catalog, Inventory, Sales, Purchase and Billing routes exist
+ * below "/" - Reports, Team and Settings are separate modules not yet built
  * (UX.md section 13). "/" redirects straight to "/leads" rather than a
  * placeholder Dashboard page for the same reason.
  */
@@ -80,6 +85,11 @@ export function AppRouter() {
         <Route path="/purchase-orders/:purchaseOrderId" element={<PurchaseOrderDetailPage />} />
         <Route path="/goods-receipts" element={<GoodsReceiptListPage />} />
         <Route path="/goods-receipts/:goodsReceiptId" element={<GoodsReceiptDetailPage />} />
+        <Route path="/invoices" element={<InvoiceListPage />} />
+        <Route path="/invoices/:invoiceId" element={<InvoiceDetailPage />} />
+        <Route path="/payments" element={<PaymentListPage />} />
+        <Route path="/payments/new" element={<PaymentCreatePage />} />
+        <Route path="/payments/:paymentId" element={<PaymentDetailPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

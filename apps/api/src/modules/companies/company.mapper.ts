@@ -19,6 +19,7 @@ export function toCompany(company: CompanyWithRelations): Company {
     website: company.website,
     gstin: company.gstin,
     taxIdentifier: company.taxIdentifier,
+    stateCode: company.stateCode,
     owner: company.owner,
     creditLimit: company.creditLimit?.toString() ?? null,
     paymentTermsDays: company.paymentTermsDays,

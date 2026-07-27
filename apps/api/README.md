@@ -247,6 +247,56 @@ Notable behaviour:
 - **No dedicated `purchase_order.cancel` permission is seeded** (unlike `sales_order.cancel`) - PO
   cancellation reuses `purchase_order.update`, matching the permission-reuse pattern from Modules 1-2.
 
+## Billing (Module 6)
+
+Customer billing profile, Invoices and Payments (BILLING.md section 121, DATABASE.md sections 68-78,
+API.md sections 76-83). Scope for this pass covers Billing Foundation through Payments: a customer's
+`CustomerProfile` (customer code, credit limit / payment terms override, since date) mirrors Module
+5's `SupplierProfile`; Invoices can be raised manually or from a confirmed Sales Order, with full
+CGST/SGST/IGST calculation; Payments record with multi-invoice allocation, including advance/
+unallocated payments. Explicitly deferred, since none are backed by the schema yet or depend on
+infrastructure (Communication, File storage) that is still only `.gitkeep` placeholders: Credit
+Notes/Debit Notes, Invoice PDF, Email/WhatsApp sending, Payment Receipts, payment reminders/Promise-
+to-Pay, Credit Override approval workflows, Supplier Invoice tracking/matching, payment gateway/bank
+reconciliation, and billing analytics/AI.
+
+Notable behaviour:
+
+- **Tax treatment is centralized, never guessed**: a single new seeded `application_settings` row
+  (`billing.seller_state_code`) holds the selling entity's own GST state code; comparing it against
+  the customer's `Company.stateCode` (a schema field that existed but was never exposed until this
+  module - see Companies below) decides CGST+SGST (intra-state) vs IGST (inter-state). Both codes must
+  be set, or invoice creation is rejected with a clear validation error (BILLING.md sections 18-19).
+- **CGST/SGST are derived from the already-rounded flat tax amount**, not recomputed independently at
+  half the rate twice - `cgstAmount = taxAmount / 2` (rounded) and `sgstAmount = taxAmount - cgstAmount`,
+  so the two halves always sum back to exactly `taxAmount` with no paisa-level rounding mismatch.
+- **Draft invoices do not count as outstanding.** `outstandingAmount` stays `0` until
+  `POST /invoices/{id}/issue`, which is the moment a draft becomes a real receivable and
+  `outstandingAmount` is set to the total - matching BILLING.md section 13.
+- **A non-blocking credit-limit warning**, not a blocking check: invoice creation always succeeds;
+  the response also reports the customer's outstanding-if-issued against their effective credit limit
+  (`CustomerProfile` overrides `Company.creditLimit` when set) when it would be exceeded. No Credit
+  Override/approval permission is modeled yet, mirroring Sales Order confirm's non-blocking stock
+  check.
+- **A confirmed Sales Order may only be invoiced once**: `POST /sales-orders/{id}/create-invoice`
+  rejects a second call with `DUPLICATE_RESOURCE`, the same pattern as Quotation-to-Sales-Order
+  conversion - the schema has no Dispatch/partial-fulfilment model yet to justify multiple invoices
+  per order.
+- **Payment allocation and reversal use the same guarded-update pattern as Inventory's stock
+  writes**: a single `UPDATE ... WHERE outstanding_amount >= $amount RETURNING ...` (or the paid-
+  amount equivalent for reversal) recomputes `paid_amount`/`outstanding_amount`/`status` atomically,
+  so a concurrent allocation on the same invoice fails safely with `DUPLICATE_RESOURCE` rather than
+  corrupting the balance.
+- **A cancelled payment is reversed, not deleted**: `PaymentAllocation` rows are kept as history, the
+  invoice's amounts they affected are restored, and the `Payment` itself is marked `cancelled` with
+  the reason appended to its notes (BILLING.md section 39). No dedicated `payment.reverse` permission
+  is seeded - reuses `payment.record`, matching the permission-reuse pattern from Modules 4-5.
+- **Companies (Module 1) gained `stateCode`**: the schema field existed since Step 3 but was never
+  exposed via the API/UI. Billing's GST determination is a genuine dependency on it, so
+  `create`/`update` company DTOs, the mapper, and a new "Edit Company Details" modal (Module 1 never
+  shipped one - only Create + Archive existed) were added to expose it, alongside credit limit and
+  payment terms, which had the same gap.
+
 ## Scripts
 
 | Command | Description |
@@ -267,17 +317,19 @@ and exercises login, session rotation/reuse-detection, RBAC, user-status enforce
 reset/change, audit logging, login rate-limiting, the CRM lead/follow-up/contact/company workflows,
 the product/category/brand/unit catalogue, warehouses/stock balances/adjustments/transfers, the
 quotation/sales-order workflow (calculations, approval gate, conversion, stock-check confirmation),
-and the purchase-order/goods-receipt workflow (calculations, always-approval, partial/full receiving,
-inventory crediting, over-receipt rejection) - all with real HTTP requests, not mocked Prisma.
-Every test gets its own application instance so the login endpoint's rate limit cannot leak between
-tests. Like `test:db`, it refuses to run unless `TEST_DATABASE_URL` names a database ending in
-`_test`.
+the purchase-order/goods-receipt workflow (calculations, always-approval, partial/full receiving,
+inventory crediting, over-receipt rejection), and the customer-profile/invoice/payment workflow
+(GST split for both intra- and inter-state, credit-limit warning, payment allocation/reversal,
+outstanding-invoices lookup) - all with real HTTP requests, not mocked Prisma. Every test gets its
+own application instance so the login endpoint's rate limit cannot leak between tests. Like
+`test:db`, it refuses to run unless `TEST_DATABASE_URL` names a database ending in `_test`.
 
 ## Status
 
 Authentication/RBAC foundation, Module 1 (CRM & Lead Management), Module 2 (Product Catalog),
 Module 3 (Inventory - Foundation tier plus Adjustments/Transfers), Module 4 (Sales - Quotations and
-Sales Orders through Order Conversion) and Module 5 (Purchase - Supplier profile, Purchase Orders,
-Goods Receipts) complete, backend and frontend. No other business modules (Billing, Communication,
-Reports, ...) exist yet - see `PROJECT_SETUP.md` section 67 for the Phase 0 implementation order and
-this repo's own module roadmap for the planned build order after Phase 0.
+Sales Orders through Order Conversion), Module 5 (Purchase - Supplier profile, Purchase Orders,
+Goods Receipts) and Module 6 (Billing - Customer profile, Invoices, Payments) complete, backend and
+frontend. No other business modules (Communication, Reports, ...) exist yet - see `PROJECT_SETUP.md`
+section 67 for the Phase 0 implementation order and this repo's own module roadmap for the planned
+build order after Phase 0.
