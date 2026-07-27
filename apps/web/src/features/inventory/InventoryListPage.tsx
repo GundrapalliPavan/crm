@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -19,6 +19,7 @@ import { useInventoryList } from './useInventory';
  */
 export function InventoryListPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: warehouses } = useWarehouses();
   const { data: categories } = useProductCategories();
   const { data: brands } = useBrands();
@@ -26,7 +27,7 @@ export function InventoryListPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [brandId, setBrandId] = useState('');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [lowStockOnly, setLowStockOnly] = useState(searchParams.get('stockStatus') === 'low');
   const [page, setPage] = useState(1);
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
   const [isTransferOpen, setIsTransferOpen] = useState(false);

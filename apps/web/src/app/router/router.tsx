@@ -4,6 +4,8 @@ import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { BrandsPage } from '@/features/brands/BrandsPage';
 import { CompanyDetailPage } from '@/features/companies/CompanyDetailPage';
 import { CompanyListPage } from '@/features/companies/CompanyListPage';
+import { CommunicationListPage } from '@/features/communications/CommunicationListPage';
+import { CommunicationTemplateListPage } from '@/features/communications/CommunicationTemplateListPage';
 import { ContactDetailPage } from '@/features/contacts/ContactDetailPage';
 import { ContactListPage } from '@/features/contacts/ContactListPage';
 import { FollowUpsPage } from '@/features/follow-ups/FollowUpsPage';
@@ -31,6 +33,13 @@ import { PurchaseOrderListPage } from '@/features/purchase-orders/PurchaseOrderL
 import { QuotationBuilderPage } from '@/features/quotations/QuotationBuilderPage';
 import { QuotationDetailPage } from '@/features/quotations/QuotationDetailPage';
 import { QuotationListPage } from '@/features/quotations/QuotationListPage';
+import { BillingReportPage } from '@/features/reports/BillingReportPage';
+import { DashboardPage } from '@/features/reports/DashboardPage';
+import { InventoryReportPage } from '@/features/reports/InventoryReportPage';
+import { LeadsReportPage } from '@/features/reports/LeadsReportPage';
+import { OutstandingReportPage } from '@/features/reports/OutstandingReportPage';
+import { PurchaseReportPage } from '@/features/reports/PurchaseReportPage';
+import { SalesReportPage } from '@/features/reports/SalesReportPage';
 import { OpportunitiesPage } from '@/features/sales/OpportunitiesPage';
 import { SalesOrderDetailPage } from '@/features/sales-orders/SalesOrderDetailPage';
 import { SalesOrderListPage } from '@/features/sales-orders/SalesOrderListPage';
@@ -39,10 +48,10 @@ import { WarehousesPage } from '@/features/warehouses/WarehousesPage';
 /**
  * Route table.
  *
- * Only CRM, Catalog, Inventory, Sales, Purchase and Billing routes exist
- * below "/" - Reports, Team and Settings are separate modules not yet built
- * (UX.md section 13). "/" redirects straight to "/leads" rather than a
- * placeholder Dashboard page for the same reason.
+ * CRM, Catalog, Inventory, Sales, Purchase, Billing, Reports and
+ * Communication routes exist below "/" - Team Management and Settings are
+ * separate modules not yet built (UX.md section 13). "/" redirects to
+ * "/dashboard" - the role-aware home screen from Module 7.
  */
 export function AppRouter() {
   return (
@@ -55,7 +64,8 @@ export function AppRouter() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Navigate to="/leads" replace />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/leads" element={<LeadListPage />} />
         <Route path="/leads/:leadId" element={<LeadDetailPage />} />
         <Route path="/contacts" element={<ContactListPage />} />
@@ -90,6 +100,14 @@ export function AppRouter() {
         <Route path="/payments" element={<PaymentListPage />} />
         <Route path="/payments/new" element={<PaymentCreatePage />} />
         <Route path="/payments/:paymentId" element={<PaymentDetailPage />} />
+        <Route path="/reports/leads" element={<LeadsReportPage />} />
+        <Route path="/reports/sales" element={<SalesReportPage />} />
+        <Route path="/reports/inventory" element={<InventoryReportPage />} />
+        <Route path="/reports/purchases" element={<PurchaseReportPage />} />
+        <Route path="/reports/billing" element={<BillingReportPage />} />
+        <Route path="/reports/outstanding" element={<OutstandingReportPage />} />
+        <Route path="/communications" element={<CommunicationListPage />} />
+        <Route path="/communication-templates" element={<CommunicationTemplateListPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

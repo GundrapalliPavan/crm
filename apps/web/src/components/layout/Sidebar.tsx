@@ -13,10 +13,12 @@ interface NavSection {
 
 /**
  * Primary navigation (UX.md sections 13-15). Only built modules are listed -
- * Reports, Team and Settings do not exist yet, and section 13 explicitly
+ * Team Management and Settings do not exist yet, and section 13 explicitly
  * warns against padding navigation out to look comprehensive before the
  * modules behind it exist.
  */
+const HOME_ITEM: NavItem = { to: '/dashboard', label: 'Dashboard' };
+
 const SECTIONS: NavSection[] = [
   {
     label: 'CRM',
@@ -65,6 +67,24 @@ const SECTIONS: NavSection[] = [
       { to: '/payments', label: 'Payments' },
     ],
   },
+  {
+    label: 'Reports',
+    items: [
+      { to: '/reports/leads', label: 'Leads' },
+      { to: '/reports/sales', label: 'Sales' },
+      { to: '/reports/inventory', label: 'Inventory' },
+      { to: '/reports/purchases', label: 'Purchase' },
+      { to: '/reports/billing', label: 'Billing' },
+      { to: '/reports/outstanding', label: 'Outstanding' },
+    ],
+  },
+  {
+    label: 'Communication',
+    items: [
+      { to: '/communications', label: 'History' },
+      { to: '/communication-templates', label: 'Templates' },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -78,6 +98,20 @@ export function Sidebar() {
           CRM
         </span>
       </div>
+
+      <NavLink
+        to={HOME_ITEM.to}
+        className={({ isActive }) =>
+          cn(
+            'block rounded-[var(--radius-button)] px-2 py-1.5 text-sm font-medium transition-colors',
+            isActive
+              ? 'bg-[var(--color-info-bg)] text-[var(--color-info-text)]'
+              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-app)] hover:text-[var(--color-text-primary)]',
+          )
+        }
+      >
+        {HOME_ITEM.label}
+      </NavLink>
 
       {SECTIONS.map((section) => (
         <div key={section.label}>

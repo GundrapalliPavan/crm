@@ -297,6 +297,76 @@ Notable behaviour:
   shipped one - only Create + Archive existed) were added to expose it, alongside credit limit and
   payment terms, which had the same gap.
 
+## Reports & Analytics (Module 7)
+
+A role-aware `GET /dashboard` plus one dedicated report per domain - Leads, Sales, Inventory,
+Purchase, Billing, Outstanding (REPORTS.md section 148, technical/API.md sections 106-111). Every
+report is a pure read/aggregate query over tables that already exist - no new schema, no new
+migration. Team Performance (`GET /reports/team-performance` is documented in API.md but not
+implemented), Branch reports, Saved/Scheduled Reports, the async large-export job pattern, cross-
+module attribution/profitability reports, AI summaries/forecasting/anomaly detection, and period-
+over-period comparison are explicitly deferred - none are backed by the schema yet, depend on
+infrastructure (a job queue) that doesn't exist, or are explicitly framed as future-platform
+capability in REPORTS.md itself.
+
+Notable behaviour:
+
+- **The dashboard is permission-driven, not role-name-driven**: each section (leads/sales/purchase/
+  inventory/billing) appears only if the caller's own permission set includes that domain's `*.read`
+  code - never `if (role === 'Sales Manager')` (CLAUDE.md section 21). A Sales Executive naturally
+  sees fewer cards than an Administrator without any special-casing on either the frontend or backend.
+- **Team Performance is deferred, not just out of scope for this pass**: `Team`/`TeamMember` exist in
+  the schema (Step 3) but are completely unused - there is no Team management module yet to create or
+  assign one. Reporting on it now would report against permanently-empty data; this should follow,
+  not precede, a real Team Management module.
+- **CSV export is synchronous** (`GET /reports/{name}/export?format=csv`), matching API.md section
+  111's "small report" path - every report here is a bounded aggregate query, so the async
+  `POST /report-exports` job pattern (which would need queue infrastructure that doesn't exist) was
+  never needed.
+- **Ageing buckets are measured from the due date**, falling back to the invoice date when none is
+  set (BILLING.md section 44) - an invoice with no configured due date is treated as already due,
+  since there is no later date to wait for.
+- **The Inventory list page now reads its `stockStatus` filter from the URL** (`?stockStatus=low`) -
+  a small, targeted change so the dashboard's "Low Stock" card can link straight to a pre-filtered
+  view instead of a bespoke drill-down screen.
+
+## Communication (Module 8)
+
+Communication Templates and Communications - the centralized log behind the Unified Communication
+Timeline (PROJECT.md sections 20-27, technical/API.md sections 84-93, DATABASE.md sections 82-92).
+Every table (`communications`, `communication_templates`, `communication_events`) already existed in
+the schema from Phase 0 and was completely unused until this pass - no migration was needed. Real
+WhatsApp/Email/SMS provider integration, webhooks, in-app Notifications (a separate, equally unused
+schema model - wiring real trigger points touches every other module's service layer, which is its
+own pass), Calling, and Automation are explicitly deferred - see `CommunicationProvider` below and
+PROJECT.md sections 25-27.
+
+Notable behaviour:
+
+- **No real messaging provider exists yet** (`infrastructure/messaging` and `infrastructure/email`
+  were empty placeholders until this pass) - `POST /communications` always ends up `failed` with a
+  clear reason ("No whatsapp provider is configured...") via `UnconfiguredCommunicationProvider`,
+  rather than faking `sent`/`delivered` or leaving the record `queued` forever with nothing that will
+  ever progress it (CLAUDE.md section 31: never treat a request as proof delivery succeeded). Business
+  modules talk to `CommunicationProvider` (`COMMUNICATION_PROVIDER` injection token), an interface -
+  swapping in a real provider later touches only `communications.module.ts`'s binding, never
+  `CommunicationsService` (CLAUDE.md sections 25-27).
+- **Either an approved template or an ad-hoc message, never neither**: `POST /communications` accepts
+  `templateId` + `variables` (substituted into `{{placeholder}}` tokens, with a clear validation error
+  listing any variable the caller forgot to supply) or a direct `subject`/`messageBody` - the service
+  rejects a request with neither. A template's `channel` must match the request's `channel`.
+  `communication_template.manage` gates create/update; there is no `communication_template.read`
+  seeded, so viewing templates reuses `communication.read`.
+- **`relatedEntityType`/`relatedEntityId` integrity is enforced in the application layer**, not by a
+  database foreign key, since a communication can polymorphically attach to any of ten different
+  entity types (DATABASE.md section 87) - the service checks the referenced row actually exists
+  before creating the record, and rejects `relatedEntityId` supplied without `relatedEntityType` (or
+  vice versa).
+- **No dedicated per-entity convenience routes** (`GET /leads/{id}/communications`, etc.) beyond what
+  the generic `GET /communications?relatedEntityType=X&relatedEntityId=Y` already covers - API.md's
+  own wording ("may include") frames those as optional sugar, not a requirement, and the generic
+  filtered endpoint already serves the same data.
+
 ## Scripts
 
 | Command | Description |
@@ -320,16 +390,24 @@ quotation/sales-order workflow (calculations, approval gate, conversion, stock-c
 the purchase-order/goods-receipt workflow (calculations, always-approval, partial/full receiving,
 inventory crediting, over-receipt rejection), and the customer-profile/invoice/payment workflow
 (GST split for both intra- and inter-state, credit-limit warning, payment allocation/reversal,
-outstanding-invoices lookup) - all with real HTTP requests, not mocked Prisma. Every test gets its
-own application instance so the login endpoint's rate limit cannot leak between tests. Like
-`test:db`, it refuses to run unless `TEST_DATABASE_URL` names a database ending in `_test`.
+outstanding-invoices lookup), the dashboard/reports workflow (permission-gated dashboard
+sections, funnel/source/conversion, sales overview and top products/customers, stock summary and
+low-stock, purchase overview and supplier spend, invoice register and collections, outstanding
+ageing buckets, CSV export), and the communication workflow (template CRUD and duplicate-name
+rejection, send-from-template variable substitution, ad-hoc sends, the honest no-provider-configured
+failure path, related-entity existence validation, filtered history) - all with real HTTP requests,
+not mocked Prisma. Every test gets its own application instance so the login endpoint's rate limit
+cannot leak between tests. Like `test:db`, it refuses to run unless `TEST_DATABASE_URL` names a
+database ending in `_test`.
 
 ## Status
 
 Authentication/RBAC foundation, Module 1 (CRM & Lead Management), Module 2 (Product Catalog),
 Module 3 (Inventory - Foundation tier plus Adjustments/Transfers), Module 4 (Sales - Quotations and
 Sales Orders through Order Conversion), Module 5 (Purchase - Supplier profile, Purchase Orders,
-Goods Receipts) and Module 6 (Billing - Customer profile, Invoices, Payments) complete, backend and
-frontend. No other business modules (Communication, Reports, ...) exist yet - see `PROJECT_SETUP.md`
-section 67 for the Phase 0 implementation order and this repo's own module roadmap for the planned
-build order after Phase 0.
+Goods Receipts), Module 6 (Billing - Customer profile, Invoices, Payments), Module 7 (Reports &
+Analytics - Dashboard, Leads/Sales/Inventory/Purchase/Billing/Outstanding reports) and Module 8
+(Communication - Templates, Communications log, Unified Communication Timeline slices on Lead/
+Company/Invoice) complete, backend and frontend. Team Management does not exist yet - see
+`PROJECT_SETUP.md` section 67 for the Phase 0 implementation order and this repo's own module
+roadmap for the planned build order after Phase 0.

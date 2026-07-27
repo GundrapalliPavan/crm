@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
 import { ContactCreateModal } from '@/features/contacts/ContactCreateModal';
 import { CustomerProfileSection } from '@/features/customers/CustomerProfileSection';
 import { SupplierProfileSection } from '@/features/suppliers/SupplierProfileSection';
@@ -116,6 +117,8 @@ export function CompanyDetailPage() {
           )}
         </ul>
       </section>
+
+      <CommunicationLogSection relatedEntityType="company" relatedEntityId={company.id} />
 
       {isArchiveOpen && (
         <ConfirmDialog

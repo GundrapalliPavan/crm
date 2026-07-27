@@ -6,3 +6,5 @@ export * from './product';
 export * from './inventory';
 export * from './sales';
 export * from './purchase';
+export * from './reports';
+export * from './communication';
