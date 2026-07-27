@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { CancelWithReasonDialog } from '@/components/common/CancelWithReasonDialog';
+import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
 import { ApiError } from '@/lib/api/api-error';
 import { useAuth } from '@/lib/auth/useAuth';
 import { invoiceStatusLabel, invoiceStatusTone } from './labels';
@@ -166,6 +167,8 @@ export function InvoiceDetailPage() {
           <span>{invoice.outstandingAmount}</span>
         </div>
       </div>
+
+      <CommunicationLogSection relatedEntityType="invoice" relatedEntityId={invoice.id} />
 
       {isCancelOpen && (
         <CancelWithReasonDialog

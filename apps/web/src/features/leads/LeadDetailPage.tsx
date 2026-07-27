@@ -4,6 +4,7 @@ import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Select } from '@/components/common/Select';
+import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
 import { useAssignableUsers } from '@/features/users/useUsers';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
 import { LeadFollowUpsPanel } from './LeadFollowUpsPanel';
@@ -138,6 +139,8 @@ export function LeadDetailPage() {
           <LeadActivityTimeline leadId={lead.id} />
         </section>
       </div>
+
+      <CommunicationLogSection relatedEntityType="lead" relatedEntityId={lead.id} />
 
       {isStatusOpen && <LeadStatusDialog lead={lead} onClose={() => setIsStatusOpen(false)} />}
 

@@ -8,9 +8,11 @@ The foundation (workspace, tooling, database schema, authentication/RBAC) is com
 Management (Module 1: leads, contacts, companies, follow-ups), the Product Catalog (Module 2:
 products, categories, brands, units), Inventory (Module 3: warehouses, stock balances, movement
 ledger, adjustments, transfers), Sales (Module 4: opportunities, quotations, sales orders),
-Purchase (Module 5: supplier profile, purchase orders, goods receipts) and Billing (Module 6:
-customer profile, invoices, payments) are implemented. Communication and Reports do not exist yet.
-See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the
+Purchase (Module 5: supplier profile, purchase orders, goods receipts), Billing (Module 6:
+customer profile, invoices, payments), Reports & Analytics (Module 7: role-aware dashboard,
+per-domain reports with CSV export) and Communication (Module 8: templates, communications log,
+Unified Communication Timeline slices on Lead/Company/Invoice) are implemented. Team Management does
+not exist yet. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the
 technical foundation specification and [`PROJECT.md`](PROJECT.md) for the product specification.
 
 ## Structure

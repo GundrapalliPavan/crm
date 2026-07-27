@@ -57,9 +57,12 @@ Authentication (login, protected routes), Module 1 (CRM & Lead Management - Lead
 Companies, Follow-ups), Module 2 (Product Catalog - Products, Categories, Brands), Module 3
 (Inventory - Stock, Stock Movements, Warehouses, adjustments/transfers), Module 4 (Sales -
 Opportunities, Quotations, Sales Orders), Module 5 (Purchase - Supplier profile on the Company
-detail page, Purchase Orders, Goods Receipts) and Module 6 (Billing - Customer profile on the
-Company detail page, Invoices, Payments) complete, with a real navigation shell
-(`components/layout`). No other business modules exist yet.
+detail page, Purchase Orders, Goods Receipts), Module 6 (Billing - Customer profile on the Company
+detail page, Invoices, Payments), Module 7 (Reports & Analytics - a role-aware Dashboard at "/",
+plus Leads/Sales/Inventory/Purchase/Billing/Outstanding report pages) and Module 8 (Communication -
+Communications history, Templates management, a "Log Communication" action + timeline slice
+embedded on Lead/Company/Invoice detail pages) complete, with a real navigation shell
+(`components/layout`). Team Management does not exist yet.
 
 Standalone Sales Order creation is deferred - orders are created via "Convert to Sales Order" on an
 accepted quotation, matching API.md's recommended flow. Standalone Invoice creation follows the same

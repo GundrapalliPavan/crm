@@ -13,6 +13,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
 import { BrandsModule } from './modules/brands/brands.module';
+import { CommunicationTemplatesModule } from './modules/communication-templates/communication-templates.module';
+import { CommunicationsModule } from './modules/communications/communications.module';
 import { CompaniesModule } from './modules/companies/companies.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { CustomersModule } from './modules/customers/customers.module';
@@ -28,6 +30,7 @@ import { ProductCategoriesModule } from './modules/product-categories/product-ca
 import { ProductsModule } from './modules/products/products.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { QuotationsModule } from './modules/quotations/quotations.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
@@ -83,6 +86,9 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     CustomersModule,
     InvoicesModule,
     PaymentsModule,
+    ReportsModule,
+    CommunicationTemplatesModule,
+    CommunicationsModule,
     HealthModule,
   ],
   providers: [
