@@ -11,3 +11,4 @@ export * from './communication';
 export * from './teams';
 export * from './files';
 export * from './notifications';
+export * from './addresses';

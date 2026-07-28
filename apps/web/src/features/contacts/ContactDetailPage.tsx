@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { AddressesSection } from '@/features/addresses/AddressesSection';
 import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useArchiveContact, useContact } from './useContacts';
 
@@ -63,6 +64,8 @@ export function ContactDetailPage() {
           </p>
         </div>
       </div>
+
+      <AddressesSection ownerType="contact" ownerId={contact.id} />
 
       <FileAttachmentsSection relatedEntityType="contact" relatedEntityId={contact.id} />
 

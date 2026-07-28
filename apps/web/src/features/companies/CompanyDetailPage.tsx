@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { AddressesSection } from '@/features/addresses/AddressesSection';
 import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
 import { ContactCreateModal } from '@/features/contacts/ContactCreateModal';
 import { CustomerProfileSection } from '@/features/customers/CustomerProfileSection';
@@ -90,6 +91,8 @@ export function CompanyDetailPage() {
 
       {company.isCustomer && <CustomerProfileSection companyId={company.id} />}
       {company.isSupplier && <SupplierProfileSection companyId={company.id} />}
+
+      <AddressesSection ownerType="company" ownerId={company.id} />
 
       <section>
         <div className="mb-3 flex items-center justify-between">

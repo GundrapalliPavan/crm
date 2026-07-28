@@ -94,6 +94,10 @@ const PERMISSIONS: ReadonlyArray<{ code: string; name: string; module: string }>
   { code: 'file.read', name: 'View and download files', module: 'files' },
   { code: 'file.delete', name: 'Delete files', module: 'files' },
 
+  // Addresses
+  { code: 'address.read', name: 'View addresses', module: 'addresses' },
+  { code: 'address.manage', name: 'Manage addresses', module: 'addresses' },
+
   // Administration
   { code: 'user.read', name: 'View users', module: 'admin' },
   { code: 'user.create', name: 'Create users', module: 'admin' },

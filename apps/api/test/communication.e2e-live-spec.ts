@@ -13,10 +13,17 @@ import { testPrisma } from './database/helpers';
  * sections 84-93) against a real Postgres database. Scope for this pass:
  * Communication Templates (CRUD) and Communications (send/record, either
  * from a template with variable substitution or ad-hoc, plus filtered
- * history). No real WhatsApp/Email/SMS provider exists yet, so every send
- * honestly ends up `failed` with a clear reason via
- * `UnconfiguredCommunicationProvider` - this suite asserts that behavior
- * directly rather than pretending delivery succeeds.
+ * history). Real providers exist for every channel (Twilio for WhatsApp/SMS,
+ * SendGrid for Email), but this repository has no real vendor account, so
+ * every test here exercises the honest per-channel "not configured" failure
+ * path (CLAUDE.md section 31) - the same behaviour the whole suite already
+ * relied on before a real provider existed. The provider classes' own
+ * request/response mapping against a mocked vendor SDK (successful sends,
+ * partial configuration, vendor-rejected sends) is unit-tested instead, in
+ * `src/infrastructure/messaging/providers/*.spec.ts` - `@nestjs/config`'s
+ * `cache: true` behaviour makes swapping env vars between two app instances
+ * in the same Jest worker unreliable, and this is the wrong altitude for
+ * that behaviour anyway: it belongs to the provider, not the HTTP/DB layer.
  */
 describe('Communication (e2e)', () => {
   let app: NestExpressApplication;
@@ -160,8 +167,26 @@ describe('Communication (e2e)', () => {
         messageBody: 'Hi Rajesh, your invoice INV-001 is ready.',
         template: { id: template.id },
       });
-      expect(response.body.failureReason).toContain('No whatsapp provider is configured');
+      expect(response.body.failureReason).toContain('Twilio WhatsApp is not configured');
       expect(response.body.failedAt).not.toBeNull();
+    });
+
+    it('honestly reports failure for SMS and Email with their own per-channel messages', async () => {
+      const { auth } = await authedRequest();
+
+      const sms = await request(app.getHttpServer())
+        .post('/api/v1/communications')
+        .set(auth())
+        .send({ channel: 'sms', recipient: '+919876543210', messageBody: 'Hi' })
+        .expect(201);
+      expect(sms.body.failureReason).toContain('Twilio SMS is not configured');
+
+      const email = await request(app.getHttpServer())
+        .post('/api/v1/communications')
+        .set(auth())
+        .send({ channel: 'email', recipient: 'customer@example.com', subject: 'Hi', messageBody: 'Hi' })
+        .expect(201);
+      expect(email.body.failureReason).toContain('SendGrid is not configured');
     });
 
     it('sends an ad-hoc message without a template', async () => {

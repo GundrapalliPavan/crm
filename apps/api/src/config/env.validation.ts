@@ -118,6 +118,41 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   STORAGE_LOCAL_PATH?: string;
+
+  /**
+   * Real providers for Communication (Module 8's `CommunicationProvider`
+   * abstraction: Twilio for WhatsApp/SMS, SendGrid for Email) - all
+   * optional. Each channel degrades independently to an honest "not
+   * configured" failure (CLAUDE.md section 31) when its own variables are
+   * absent - this repository has no real account with either vendor, so
+   * nothing here can actually send until an operator supplies real
+   * credentials.
+   */
+  @IsOptional()
+  @IsString()
+  TWILIO_ACCOUNT_SID?: string;
+
+  @IsOptional()
+  @IsString()
+  TWILIO_AUTH_TOKEN?: string;
+
+  /** WhatsApp-enabled sender, e.g. "whatsapp:+14155238886" (Twilio's sandbox number in development). */
+  @IsOptional()
+  @IsString()
+  TWILIO_WHATSAPP_FROM?: string;
+
+  /** SMS-enabled Twilio phone number, e.g. "+15005550006". */
+  @IsOptional()
+  @IsString()
+  TWILIO_SMS_FROM?: string;
+
+  @IsOptional()
+  @IsString()
+  SENDGRID_API_KEY?: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'SENDGRID_FROM_EMAIL must be a valid email address' })
+  SENDGRID_FROM_EMAIL?: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

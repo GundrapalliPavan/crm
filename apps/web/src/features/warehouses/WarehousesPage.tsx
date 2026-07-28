@@ -4,10 +4,12 @@ import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import { useUpdateWarehouse, useWarehouses } from './useWarehouses';
+import { WarehouseAddressesModal } from './WarehouseAddressesModal';
 import { WarehouseCreateModal } from './WarehouseCreateModal';
 
 function WarehouseRow({ warehouse }: { warehouse: Warehouse }) {
   const updateWarehouse = useUpdateWarehouse(warehouse.id);
+  const [isAddressesOpen, setIsAddressesOpen] = useState(false);
 
   return (
     <tr className="border-b border-[var(--color-border-default)] last:border-0">
@@ -20,15 +22,24 @@ function WarehouseRow({ warehouse }: { warehouse: Warehouse }) {
         {warehouse.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="neutral">Inactive</Badge>}
       </td>
       <td className="px-4 py-3 text-right">
-        <Button
-          size="sm"
-          variant="secondary"
-          isLoading={updateWarehouse.isPending}
-          onClick={() => void updateWarehouse.mutateAsync({ isActive: !warehouse.isActive })}
-        >
-          {warehouse.isActive ? 'Deactivate' : 'Activate'}
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setIsAddressesOpen(true)}>
+            Addresses
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            isLoading={updateWarehouse.isPending}
+            onClick={() => void updateWarehouse.mutateAsync({ isActive: !warehouse.isActive })}
+          >
+            {warehouse.isActive ? 'Deactivate' : 'Activate'}
+          </Button>
+        </div>
       </td>
+
+      {isAddressesOpen && (
+        <WarehouseAddressesModal warehouse={warehouse} onClose={() => setIsAddressesOpen(false)} />
+      )}
     </tr>
   );
 }

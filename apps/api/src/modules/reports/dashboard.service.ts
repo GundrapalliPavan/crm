@@ -27,6 +27,51 @@ export class DashboardService {
     const weekAgo = new Date(now);
     weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayEnd = new Date(todayStart);
+    todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+
+    if (has('follow_up.read')) {
+      const [dueToday, overdue, items] = await Promise.all([
+        this.prisma.followUp.count({
+          where: { assignedTo: actorId, status: 'pending', scheduledAt: { gte: todayStart, lt: todayEnd } },
+        }),
+        this.prisma.followUp.count({
+          where: { assignedTo: actorId, status: 'pending', scheduledAt: { lt: todayStart } },
+        }),
+        this.prisma.followUp.findMany({
+          where: { assignedTo: actorId, status: 'pending', scheduledAt: { lt: todayEnd } },
+          select: {
+            id: true,
+            leadId: true,
+            contactId: true,
+            companyId: true,
+            followUpType: true,
+            scheduledAt: true,
+            lead: { select: { firstName: true, lastName: true } },
+            contact: { select: { firstName: true, lastName: true } },
+            company: { select: { name: true } },
+          },
+          orderBy: { scheduledAt: 'asc' },
+          take: 5,
+        }),
+      ]);
+
+      response.followUps = {
+        dueToday,
+        overdue,
+        items: items.map((item) => ({
+          id: item.id,
+          entityLabel: entityLabel(item),
+          leadId: item.leadId,
+          contactId: item.contactId,
+          companyId: item.companyId,
+          followUpType: item.followUpType,
+          scheduledAt: item.scheduledAt.toISOString(),
+          isOverdue: item.scheduledAt < todayStart,
+        })),
+      };
+    }
 
     if (has('lead.read')) {
       const [totalOpen, myOpen, newThisWeek, createdThisMonth, convertedThisMonth] = await Promise.all([
@@ -111,4 +156,19 @@ function conversionRate(converted: number, total: number): string {
     return '0';
   }
   return new Prisma.Decimal(converted).dividedBy(total).times(100).toDecimalPlaces(2).toString();
+}
+
+type FollowUpEntityRefs = {
+  lead: { firstName: string; lastName: string | null } | null;
+  contact: { firstName: string; lastName: string | null } | null;
+  company: { name: string } | null;
+};
+
+/** A follow-up relates to exactly one of lead/contact/company (enforced in FollowUpsService.create). */
+function entityLabel(followUp: FollowUpEntityRefs): string {
+  const person = followUp.lead ?? followUp.contact;
+  if (person) {
+    return [person.firstName, person.lastName].filter(Boolean).join(' ');
+  }
+  return followUp.company?.name ?? 'Unlinked';
 }

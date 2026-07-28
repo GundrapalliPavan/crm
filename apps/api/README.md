@@ -310,10 +310,25 @@ capability in REPORTS.md itself.
 
 Notable behaviour:
 
-- **The dashboard is permission-driven, not role-name-driven**: each section (leads/sales/purchase/
-  inventory/billing) appears only if the caller's own permission set includes that domain's `*.read`
-  code - never `if (role === 'Sales Manager')` (CLAUDE.md section 21). A Sales Executive naturally
-  sees fewer cards than an Administrator without any special-casing on either the frontend or backend.
+- **The dashboard is permission-driven, not role-name-driven**: each section (followUps/leads/sales/
+  purchase/inventory/billing) appears only if the caller's own permission set includes that domain's
+  `*.read` code - never `if (role === 'Sales Manager')` (CLAUDE.md section 21). A Sales Executive
+  naturally sees fewer cards than an Administrator without any special-casing on either the frontend
+  or backend.
+- **`followUps` closes a real gap**: PROJECT.md section 29 ("Which leads require follow-up?") and
+  API.md section 109's own conceptual dashboard sketch both call for it, but it was missing from the
+  first Dashboard pass - `FollowUp`'s `[assignedTo, status, scheduledAt]` index was already annotated
+  "drives the 'my follow-ups due' queue" and simply had no query built against it yet. Always scoped
+  to the caller's own pending follow-ups regardless of role (team-wide follow-up completion belongs to
+  the existing Team Performance report, not this personal queue), split into `dueToday`/`overdue`
+  counts plus a short (5-item) actionable list with a resolved `entityLabel` (the lead/contact/company
+  name) and that record's id, so the frontend can link straight to it.
+- **The frontend groups sections by urgency, not by domain**: "Needs your attention" (follow-ups,
+  quotations awaiting approval, low stock, overdue invoices - danger-accented when something is
+  overdue), "My work" (the actionable follow-up list), then "Business snapshot" (the original per-
+  domain KPI cards, unchanged, demoted to a supporting role) - PROJECT.md section 29 frames the
+  dashboard as "not primarily a reporting page," so raw counts alone were reorganized around what the
+  caller should actually do next rather than replaced.
 - **Team Performance (`GET /reports/team-performance`) was deferred here and completed in Module 9**:
   `Team`/`TeamMember` existed in the schema (Step 3) but were completely unused until Module 9 built a
   Teams module to create and assign them - reporting on it earlier would have reported against
@@ -334,22 +349,33 @@ Notable behaviour:
 Communication Templates and Communications - the centralized log behind the Unified Communication
 Timeline (PROJECT.md sections 20-27, technical/API.md sections 84-93, DATABASE.md sections 82-92).
 Every table (`communications`, `communication_templates`, `communication_events`) already existed in
-the schema from Phase 0 and was completely unused until this pass - no migration was needed. Real
-WhatsApp/Email/SMS provider integration, webhooks, in-app Notifications (a separate, equally unused
-schema model - wiring real trigger points touches every other module's service layer, which is its
-own pass), Calling, and Automation are explicitly deferred - see `CommunicationProvider` below and
-PROJECT.md sections 25-27.
+the schema from Phase 0 and was completely unused until this pass - no migration was needed. Delivery
+webhooks, Calling, and Automation are explicitly deferred - see PROJECT.md sections 25-27.
 
 Notable behaviour:
 
-- **No real messaging provider exists yet** (`infrastructure/messaging` and `infrastructure/email`
-  were empty placeholders until this pass) - `POST /communications` always ends up `failed` with a
-  clear reason ("No whatsapp provider is configured...") via `UnconfiguredCommunicationProvider`,
-  rather than faking `sent`/`delivered` or leaving the record `queued` forever with nothing that will
-  ever progress it (CLAUDE.md section 31: never treat a request as proof delivery succeeded). Business
-  modules talk to `CommunicationProvider` (`COMMUNICATION_PROVIDER` injection token), an interface -
-  swapping in a real provider later touches only `communications.module.ts`'s binding, never
+- **Real providers are wired per channel**: Twilio for WhatsApp and SMS (one account/SDK for both),
+  SendGrid for Email - chosen as well-supported defaults (CLAUDE.md section 68: external provider
+  choice) since this repository has no pre-existing vendor account. Business modules still only ever
+  talk to `CommunicationProvider` (`COMMUNICATION_PROVIDER` injection token) - `communications.module.ts`
+  binds it to `CompositeCommunicationProvider` (`infrastructure/messaging/providers/`), which routes
+  `send()` to `TwilioWhatsAppProvider`, `TwilioSmsProvider` or `SendGridEmailProvider` by channel.
+  Swapping any single channel's vendor, or the whole composition, touches only that binding - never
   `CommunicationsService` (CLAUDE.md sections 25-27).
+- **Each channel degrades independently and honestly** when its own required env vars
+  (`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_WHATSAPP_FROM`/`TWILIO_SMS_FROM`,
+  `SENDGRID_API_KEY`/`SENDGRID_FROM_EMAIL` - all optional, see `.env.example`) are absent: `POST
+  /communications` ends up `failed` with a clear per-channel reason ("Twilio WhatsApp is not configured
+  for this environment (set ...)"), rather than faking `sent`/`delivered` or leaving the record `queued`
+  forever with nothing that will ever progress it (CLAUDE.md section 31: never treat a request as proof
+  delivery succeeded). No real vendor account exists in this repository, so nothing sends until an
+  operator supplies real credentials as environment variables - Claude/Claude Code never creates vendor
+  accounts or handles real secrets on the user's behalf.
+- **Provider-level behaviour (successful sends, partial configuration, vendor-rejected sends) is unit-
+  tested** against a mocked vendor SDK in `src/infrastructure/messaging/providers/*.spec.ts` (`pnpm
+  test`), independent of the database/HTTP layer. The e2e-live suite (`test/communication.e2e-live-
+  spec.ts`) exercises the honest "not configured" failure path per channel, since this repository's test
+  environment has no real credentials either.
 - **Either an approved template or an ad-hoc message, never neither**: `POST /communications` accepts
   `templateId` + `variables` (substituted into `{{placeholder}}` tokens, with a clear validation error
   listing any variable the caller forgot to supply) or a direct `subject`/`messageBody` - the service
@@ -448,9 +474,10 @@ the existing `minimumStockLevel` field). **Follow-up Due** and **Invoice Overdue
 deferred - both are genuinely time-based rather than action-triggered, so they need a real scheduled
 job, which is new infrastructure and its own decision. **Task Assigned** and **Support Escalation**
 are deferred - neither Tasks nor Customer Service have schema yet. External notification channels
-(Email, WhatsApp, SMS, Web/Mobile Push) are explicitly deferred - PROJECT.md frames them as
-"potential channels," and Communication (Module 8) already established that no real provider exists
-yet.
+(Email, WhatsApp, SMS, Web/Mobile Push) are explicitly deferred - PROJECT.md frames them as "potential
+channels," and this is a distinct decision from Communication's own real providers (Module 8): pushing
+an in-app notification out over Email/WhatsApp/SMS would need its own trigger/template/preference
+design, not just a wired channel.
 
 Notable behaviour:
 
@@ -486,6 +513,41 @@ Notable behaviour:
   (`quotation.approve` / `purchase_order.approve` / `inventory.adjust` for Low Stock), found via
   `common/users/permission-holders.ts`'s `findUserIdsWithPermission()` - a role/permission join, not
   a hardcoded role-name check (CLAUDE.md section 21).
+
+## Addresses
+
+A platform capability (technical/DATABASE.md sections 36-37): CRUD for addresses attached to a
+Company, Contact, or Warehouse - a billing/shipping address on a customer or supplier, or a
+warehouse's physical location. `Address` existed in the schema since Phase 0 and was completely
+unused - no migration was needed.
+
+Notable behaviour:
+
+- **An address belongs to exactly one owner**, via dedicated nullable `companyId`/`contactId`/
+  `warehouseId` foreign keys plus a database CHECK constraint (`addresses_single_owner`) - not a
+  generic `relatedEntityType`/`relatedEntityId` pair like Files/Communications use. DATABASE.md
+  section 36 explicitly prefers relational integrity over that convenience here, since an address
+  only ever attaches to one of three fixed entity types. `AddressesService` mirrors the same
+  "exactly one" rule at the application layer with a friendly `VALIDATION_ERROR`, rather than
+  surfacing the constraint violation directly.
+- **One default address per owner and addressType**: creating or updating an address with
+  `isDefault: true` clears the previous default for that same owner + addressType combination (e.g.
+  setting a new default *billing* address doesn't touch the existing default *shipping* address).
+- **Blank optional fields are normalized, not stored literally**: a cleared text input submits `""`,
+  not an absent key - `AddressesService` treats a blank `line2`/`stateCode`/`postalCode` as "not set"
+  (create: omitted, so the column stays its natural `null`; update: explicitly nulled). `countryCode`
+  is the one exception - the column is `NOT NULL` with a database default of `"IN"`, so a blank
+  `countryCode` resets to `"IN"` instead of being nulled. This was an actual bug caught during manual
+  browser QA (a real form submission sends `""`, unlike a test payload that simply omits the key) and
+  is covered by regression tests in `test/addresses.e2e-live-spec.ts`.
+- **`address.read` / `address.manage`** are domain-level permissions, orthogonal to the owning
+  entity's own permissions - the same precedent Files established with `file.upload`/`file.read`/
+  `file.delete`.
+- **Wiring the `billingAddressSnapshot`/`shippingAddressSnapshot`/`supplierAddressSnapshot` JSON
+  columns already present on Quotation/SalesOrder/PurchaseOrder/Invoice** (so those documents capture
+  an immutable copy of the address at creation time) is a deliberate follow-up, not done in this
+  pass - it touches four already-shipped financial services and deserves its own reviewed pass
+  (CLAUDE.md section 75), rather than being bundled into a focused platform-capability change.
 
 ## Scripts
 

@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router';
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router';
 import { cn } from '@/utils/cn';
 
 interface NavItem {
@@ -92,58 +93,91 @@ const SECTIONS: NavSection[] = [
   },
 ];
 
+function sectionContainsPath(section: NavSection, pathname: string): boolean {
+  return section.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
+}
+
+const NAV_LINK_CLASSES = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    'block rounded-[var(--radius-button)] px-2 py-1.5 text-sm font-medium transition-colors',
+    isActive
+      ? 'bg-[var(--color-info-bg)] text-[var(--color-info-text)]'
+      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-app)] hover:text-[var(--color-text-primary)]',
+  );
+
+/** Nine module sections no longer fit comfortably as permanently-expanded lists - each one collapses independently, defaulting open only where the current route already is. */
 export function Sidebar() {
+  const location = useLocation();
+  const [openSections, setOpenSections] = useState<Set<string>>(
+    () => new Set(SECTIONS.filter((section) => sectionContainsPath(section, location.pathname)).map((s) => s.label)),
+  );
+
+  function toggleSection(label: string) {
+    setOpenSections((current) => {
+      const next = new Set(current);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  }
+
   return (
     <nav
       aria-label="Primary"
-      className="flex h-full w-56 shrink-0 flex-col gap-6 border-r border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-4"
+      className="flex h-full w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-4"
     >
-      <div className="px-2">
+      <div className="mb-5 px-2">
         <span className="font-serif text-base font-bold text-[var(--color-text-primary)]">
           CRM
         </span>
       </div>
 
-      <NavLink
-        to={HOME_ITEM.to}
-        className={({ isActive }) =>
-          cn(
-            'block rounded-[var(--radius-button)] px-2 py-1.5 text-sm font-medium transition-colors',
-            isActive
-              ? 'bg-[var(--color-info-bg)] text-[var(--color-info-text)]'
-              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-app)] hover:text-[var(--color-text-primary)]',
-          )
-        }
-      >
+      <NavLink to={HOME_ITEM.to} className={NAV_LINK_CLASSES}>
         {HOME_ITEM.label}
       </NavLink>
 
-      {SECTIONS.map((section) => (
-        <div key={section.label}>
-          <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-            {section.label}
-          </p>
-          <ul className="flex flex-col gap-0.5">
-            {section.items.map((item) => (
-              <li key={item.to}>
-                <NavLink
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn(
-                      'block rounded-[var(--radius-button)] px-2 py-1.5 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-[var(--color-info-bg)] text-[var(--color-info-text)]'
-                        : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-app)] hover:text-[var(--color-text-primary)]',
-                    )
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      <div className="my-2 border-t border-[var(--color-border-default)]" />
+
+      {SECTIONS.map((section) => {
+        const isOpen = openSections.has(section.label);
+        return (
+          <div key={section.label}>
+            <button
+              type="button"
+              onClick={() => toggleSection(section.label)}
+              aria-expanded={isOpen}
+              className="flex w-full items-center justify-between rounded-[var(--radius-button)] px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              {section.label}
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+                className={cn('h-3.5 w-3.5 shrink-0 transition-transform', isOpen ? 'rotate-90' : '')}
+              >
+                <path d="M7 5l6 5-6 5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+
+            {isOpen && (
+              <ul className="flex flex-col gap-0.5 pb-1">
+                {section.items.map((item) => (
+                  <li key={item.to}>
+                    <NavLink to={item.to} className={NAV_LINK_CLASSES}>
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 }
