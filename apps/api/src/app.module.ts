@@ -10,6 +10,7 @@ import { validationPipeOptions } from './common/pipes/validation-exception.facto
 import { RequestContextModule } from './common/request-context/request-context.module';
 import { AppConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
@@ -97,6 +98,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     TeamsModule,
     FilesModule,
     NotificationsModule,
+    AddressesModule,
     HealthModule,
   ],
   providers: [

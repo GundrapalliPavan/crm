@@ -15,9 +15,11 @@ Unified Communication Timeline slices on Lead/Company/Invoice), Team Management 
 membership, manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders, Team
 Performance report), File Attachments (a platform capability: upload/download/delete files
 attached to any of Leads/Contacts/Companies/Quotations/Sales Orders/Purchase Orders/Goods
-Receipts/Invoices/Payments/Products) and In-App Notifications (a platform capability: a
+Receipts/Invoices/Payments/Products), In-App Notifications (a platform capability: a
 notification bell driven by internal domain events - Lead Assigned, Quotation/Purchase Order
-Approval Required, Payment Received, Low Stock) are implemented. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md)
+Approval Required, Payment Received, Low Stock), and Addresses (a platform capability: CRUD for
+billing/shipping/other addresses attached to a Company, Contact, or Warehouse, one default per
+owner and address type) are implemented. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md)
 for the technical foundation specification and [`PROJECT.md`](PROJECT.md) for the product
 specification.
 

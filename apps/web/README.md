@@ -65,10 +65,12 @@ timeline slice embedded on Lead/Company/Invoice detail pages), Module 9 (Team Ma
 Teams list/detail with membership management, a Team filter on Lead/Quotation/Sales Order lists,
 and a Team assignment control on Lead Detail), File Attachments (an "Attachments" section - upload,
 download, remove - embedded on every detail page: Lead, Contact, Company, Quotation, Sales Order,
-Purchase Order, Goods Receipt, Invoice, Payment, Product), and In-App Notifications (a bell in the
+Purchase Order, Goods Receipt, Invoice, Payment, Product), In-App Notifications (a bell in the
 top bar - unread badge polled every 30s, a dropdown of recent notifications, mark-read on click with
-navigation to the related record, mark-all-read) complete, with a real navigation shell
-(`components/layout`).
+navigation to the related record, mark-all-read), and Addresses (an "Addresses" section - add, edit,
+remove, set as default - embedded on the Company and Contact detail pages, plus a "Manage Addresses"
+modal off each Warehouse row since Warehouses have no dedicated detail page) complete, with a real
+navigation shell (`components/layout`).
 
 Standalone Sales Order creation is deferred - orders are created via "Convert to Sales Order" on an
 accepted quotation, matching API.md's recommended flow. Standalone Invoice creation follows the same

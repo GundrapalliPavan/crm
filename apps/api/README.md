@@ -499,6 +499,41 @@ Notable behaviour:
   `common/users/permission-holders.ts`'s `findUserIdsWithPermission()` - a role/permission join, not
   a hardcoded role-name check (CLAUDE.md section 21).
 
+## Addresses
+
+A platform capability (technical/DATABASE.md sections 36-37): CRUD for addresses attached to a
+Company, Contact, or Warehouse - a billing/shipping address on a customer or supplier, or a
+warehouse's physical location. `Address` existed in the schema since Phase 0 and was completely
+unused - no migration was needed.
+
+Notable behaviour:
+
+- **An address belongs to exactly one owner**, via dedicated nullable `companyId`/`contactId`/
+  `warehouseId` foreign keys plus a database CHECK constraint (`addresses_single_owner`) - not a
+  generic `relatedEntityType`/`relatedEntityId` pair like Files/Communications use. DATABASE.md
+  section 36 explicitly prefers relational integrity over that convenience here, since an address
+  only ever attaches to one of three fixed entity types. `AddressesService` mirrors the same
+  "exactly one" rule at the application layer with a friendly `VALIDATION_ERROR`, rather than
+  surfacing the constraint violation directly.
+- **One default address per owner and addressType**: creating or updating an address with
+  `isDefault: true` clears the previous default for that same owner + addressType combination (e.g.
+  setting a new default *billing* address doesn't touch the existing default *shipping* address).
+- **Blank optional fields are normalized, not stored literally**: a cleared text input submits `""`,
+  not an absent key - `AddressesService` treats a blank `line2`/`stateCode`/`postalCode` as "not set"
+  (create: omitted, so the column stays its natural `null`; update: explicitly nulled). `countryCode`
+  is the one exception - the column is `NOT NULL` with a database default of `"IN"`, so a blank
+  `countryCode` resets to `"IN"` instead of being nulled. This was an actual bug caught during manual
+  browser QA (a real form submission sends `""`, unlike a test payload that simply omits the key) and
+  is covered by regression tests in `test/addresses.e2e-live-spec.ts`.
+- **`address.read` / `address.manage`** are domain-level permissions, orthogonal to the owning
+  entity's own permissions - the same precedent Files established with `file.upload`/`file.read`/
+  `file.delete`.
+- **Wiring the `billingAddressSnapshot`/`shippingAddressSnapshot`/`supplierAddressSnapshot` JSON
+  columns already present on Quotation/SalesOrder/PurchaseOrder/Invoice** (so those documents capture
+  an immutable copy of the address at creation time) is a deliberate follow-up, not done in this
+  pass - it touches four already-shipped financial services and deserves its own reviewed pass
+  (CLAUDE.md section 75), rather than being bundled into a focused platform-capability change.
+
 ## Scripts
 
 | Command | Description |
