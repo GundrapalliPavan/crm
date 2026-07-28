@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useArchiveContact, useContact } from './useContacts';
 
 export function ContactDetailPage() {
@@ -62,6 +63,8 @@ export function ContactDetailPage() {
           </p>
         </div>
       </div>
+
+      <FileAttachmentsSection relatedEntityType="contact" relatedEntityId={contact.id} />
 
       {isArchiveOpen && (
         <ConfirmDialog

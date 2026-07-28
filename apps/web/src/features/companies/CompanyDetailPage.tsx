@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
 import { ContactCreateModal } from '@/features/contacts/ContactCreateModal';
 import { CustomerProfileSection } from '@/features/customers/CustomerProfileSection';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { SupplierProfileSection } from '@/features/suppliers/SupplierProfileSection';
 import { CompanyEditModal } from './CompanyEditModal';
 import { companyTypeLabel } from './labels';
@@ -117,6 +118,8 @@ export function CompanyDetailPage() {
           )}
         </ul>
       </section>
+
+      <FileAttachmentsSection relatedEntityType="company" relatedEntityId={company.id} />
 
       <CommunicationLogSection relatedEntityType="company" relatedEntityId={company.id} />
 

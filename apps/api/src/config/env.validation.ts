@@ -107,6 +107,17 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   BOOTSTRAP_ADMIN_PASSWORD?: string;
+
+  /**
+   * Local-disk root for uploaded files (PROJECT_SETUP.md section 23: "Local
+   * development may use local storage"). Optional - defaults to a directory
+   * next to the API package when unset (see AppConfigService), so existing
+   * `.env` files keep working. A real cloud provider is a later binding swap
+   * in files.module.ts, not a config value.
+   */
+  @IsOptional()
+  @IsString()
+  STORAGE_LOCAL_PATH?: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

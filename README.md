@@ -11,10 +11,15 @@ ledger, adjustments, transfers), Sales (Module 4: opportunities, quotations, sal
 Purchase (Module 5: supplier profile, purchase orders, goods receipts), Billing (Module 6:
 customer profile, invoices, payments), Reports & Analytics (Module 7: role-aware dashboard,
 per-domain reports with CSV export), Communication (Module 8: templates, communications log,
-Unified Communication Timeline slices on Lead/Company/Invoice) and Team Management (Module 9:
-teams, membership, manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders,
-Team Performance report) are implemented. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the
-technical foundation specification and [`PROJECT.md`](PROJECT.md) for the product specification.
+Unified Communication Timeline slices on Lead/Company/Invoice), Team Management (Module 9: teams,
+membership, manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders, Team
+Performance report), File Attachments (a platform capability: upload/download/delete files
+attached to any of Leads/Contacts/Companies/Quotations/Sales Orders/Purchase Orders/Goods
+Receipts/Invoices/Payments/Products) and In-App Notifications (a platform capability: a
+notification bell driven by internal domain events - Lead Assigned, Quotation/Purchase Order
+Approval Required, Payment Received, Low Stock) are implemented. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md)
+for the technical foundation specification and [`PROJECT.md`](PROJECT.md) for the product
+specification.
 
 ## Structure
 
@@ -185,6 +190,7 @@ pnpm --filter @crm/api test:e2e:db   # authentication, sessions, RBAC (real HTTP
 | `AUTH_ACCESS_TOKEN_TTL_MINUTES` | api | Access token lifetime |
 | `AUTH_REFRESH_TOKEN_TTL_DAYS` | api | Refresh session lifetime |
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | api | Optional first-administrator bootstrap - see [Sign In](#sign-in-development) |
+| `STORAGE_LOCAL_PATH` | api | Optional local-disk root for uploaded files; defaults to `apps/api/uploads` |
 | `VITE_API_BASE_URL` | web | API base URL used by the HTTP client |
 | `POSTGRES_*` | docker | Local Postgres container settings |
 

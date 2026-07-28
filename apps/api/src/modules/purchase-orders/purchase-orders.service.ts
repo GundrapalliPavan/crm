@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, PurchaseOrder, PurchaseOrderSummary } from '@crm/types';
 import { AuditService } from '../../common/audit/audit.service';
 import { calculateDocumentTotals } from '../../common/commercial/quotation-line-calculator';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
+import { DOMAIN_EVENTS } from '../../common/events/domain-events';
+import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import { BusinessRuleError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CancelPurchaseOrderDto } from './dto/cancel-purchase-order.dto';
@@ -31,6 +34,7 @@ export class PurchaseOrdersService {
     private readonly prisma: PrismaService,
     private readonly numbering: DocumentNumberingService,
     private readonly auditService: AuditService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async list(query: ListPurchaseOrdersQuery): Promise<ApiCollectionResponse<PurchaseOrderSummary>> {
@@ -162,6 +166,10 @@ export class PurchaseOrdersService {
       where: { id },
       data: { status: 'approval_pending' },
       include: PURCHASE_ORDER_DETAIL_INCLUDE,
+    });
+    await emitDomainEvent(this.events, DOMAIN_EVENTS.purchaseOrderApprovalRequired, {
+      purchaseOrderId: order.id,
+      purchaseOrderNumber: order.poNumber,
     });
     return toPurchaseOrder(order);
   }

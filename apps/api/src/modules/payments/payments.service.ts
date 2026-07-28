@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Payment, PaymentSummary } from '@crm/types';
 import { AuditService } from '../../common/audit/audit.service';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
+import { DOMAIN_EVENTS } from '../../common/events/domain-events';
+import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CancelPaymentDto } from './dto/cancel-payment.dto';
@@ -26,6 +29,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly numbering: DocumentNumberingService,
     private readonly auditService: AuditService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async list(query: ListPaymentsQuery): Promise<ApiCollectionResponse<PaymentSummary>> {
@@ -114,6 +118,18 @@ export class PaymentsService {
       entityId: payment.id,
       metadata: { allocationCount: allocations.length },
     });
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: dto.customerCompanyId },
+      select: { ownerId: true },
+    });
+    if (company?.ownerId) {
+      await emitDomainEvent(this.events, DOMAIN_EVENTS.paymentReceived, {
+        paymentId: payment.id,
+        paymentNumber: payment.paymentNumber,
+        companyOwnerUserId: company.ownerId,
+      });
+    }
 
     return toPayment(payment);
   }

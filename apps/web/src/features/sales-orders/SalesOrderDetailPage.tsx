@@ -4,6 +4,7 @@ import type { CreditLimitWarning, SalesOrderStockWarning } from '@crm/types';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { CancelWithReasonDialog } from '@/components/common/CancelWithReasonDialog';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useCreateInvoiceFromSalesOrder } from '@/features/invoices/useInvoices';
 import { ApiError } from '@/lib/api/api-error';
 import { useAuth } from '@/lib/auth/useAuth';
@@ -224,6 +225,8 @@ export function SalesOrderDetailPage() {
           <span>{order.totalAmount}</span>
         </div>
       </div>
+
+      <FileAttachmentsSection relatedEntityType="sales_order" relatedEntityId={order.id} />
 
       {isCancelOpen && (
         <CancelWithReasonDialog

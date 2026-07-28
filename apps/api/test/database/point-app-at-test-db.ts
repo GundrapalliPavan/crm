@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { loadTestEnv } from './load-test-env';
 
 /**
@@ -30,3 +31,7 @@ if (!/_test(\?|$)/.test(testDatabaseUrl)) {
 }
 
 process.env.DATABASE_URL = testDatabaseUrl;
+
+// Files tests write real bytes through LocalFilesystemStorageProvider - keep
+// them out of the development uploads directory entirely.
+process.env.STORAGE_LOCAL_PATH = join(__dirname, '..', '..', 'uploads-test');

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type {
   ApiCollectionResponse,
@@ -7,6 +8,8 @@ import type {
   StockMovement,
   StockAdjustmentReason,
 } from '@crm/types';
+import { DOMAIN_EVENTS } from '../../common/events/domain-events';
+import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import { NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
@@ -29,7 +32,10 @@ type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' |
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async list(query: ListInventoryQuery): Promise<ApiCollectionResponse<InventoryBalance>> {
     let lowStockKeys: CompositeBalanceKey[] | undefined;
@@ -109,8 +115,9 @@ export class InventoryService {
       throw new ValidationError({ quantityDelta: ['Adjustment quantity must not be zero.'] });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const { before, after } = await this.prisma.$transaction(async (tx) => {
       await this.ensureBalanceRow(tx, dto.productId, dto.warehouseId);
+      const before = delta.isNegative() ? await this.fetchBalance(tx, dto.productId, dto.warehouseId) : null;
 
       const affected = await tx.$executeRaw`
         UPDATE inventory_balances
@@ -136,8 +143,16 @@ export class InventoryService {
         },
       });
 
-      return this.fetchBalance(tx, dto.productId, dto.warehouseId);
+      const after = await this.fetchBalance(tx, dto.productId, dto.warehouseId);
+      return { before, after };
     });
+
+    // Emitted only after the transaction above has committed, never from
+    // inside it - a listener side effect (a notification write, on a
+    // separate connection) must never be observable before the change it
+    // describes is actually durable.
+    await this.emitIfCrossedIntoLowStock(before, after);
+    return after;
   }
 
   /**
@@ -161,9 +176,10 @@ export class InventoryService {
       throw new ValidationError({ quantity: ['Transfer quantity must be greater than zero.'] });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const { fromBefore, from, to } = await this.prisma.$transaction(async (tx) => {
       await this.ensureBalanceRow(tx, dto.productId, dto.fromWarehouseId);
       await this.ensureBalanceRow(tx, dto.productId, dto.toWarehouseId);
+      const fromBefore = await this.fetchBalance(tx, dto.productId, dto.fromWarehouseId);
 
       const debited = await tx.$executeRaw`
         UPDATE inventory_balances
@@ -213,8 +229,11 @@ export class InventoryService {
         this.fetchBalance(tx, dto.productId, dto.fromWarehouseId),
         this.fetchBalance(tx, dto.productId, dto.toWarehouseId),
       ]);
-      return { from, to };
+      return { fromBefore, from, to };
     });
+
+    await this.emitIfCrossedIntoLowStock(fromBefore, from);
+    return { from, to };
   }
 
   /**
@@ -285,6 +304,23 @@ export class InventoryService {
       include: INVENTORY_BALANCE_INCLUDE,
     });
     return toInventoryBalance(balance);
+  }
+
+  /**
+   * Fires only on the false -> true transition, not on every movement that
+   * merely keeps a balance low (PROJECT.md section 26: "Users should not be
+   * overwhelmed with unnecessary notifications"). `before` is `null` when the
+   * caller already knows the movement could only increase stock.
+   */
+  private async emitIfCrossedIntoLowStock(before: InventoryBalance | null, after: InventoryBalance): Promise<void> {
+    if (before && !before.isLowStock && after.isLowStock) {
+      await emitDomainEvent(this.events, DOMAIN_EVENTS.lowStock, {
+        productId: after.productId,
+        productName: after.product.name,
+        warehouseId: after.warehouseId,
+        warehouseName: after.warehouse.name,
+      });
+    }
   }
 
   private composeAdjustmentNotes(reason: StockAdjustmentReason, notes?: string): string {

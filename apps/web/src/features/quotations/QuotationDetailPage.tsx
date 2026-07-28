@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { CancelWithReasonDialog } from '@/components/common/CancelWithReasonDialog';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useAuth } from '@/lib/auth/useAuth';
 import { ApiError } from '@/lib/api/api-error';
 import { quotationStatusLabel, quotationStatusTone } from './labels';
@@ -210,6 +211,8 @@ export function QuotationDetailPage() {
           <span>{quotation.totalAmount}</span>
         </div>
       </div>
+
+      <FileAttachmentsSection relatedEntityType="quotation" relatedEntityId={quotation.id} />
 
       {isCancelOpen && (
         <CancelWithReasonDialog

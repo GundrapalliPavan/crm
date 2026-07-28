@@ -16,16 +16,11 @@ import type {
   TeamPerformanceReportResponse,
 } from '@crm/types';
 import { apiClient } from '@/lib/api/client';
+import { downloadBlob } from '@/lib/api/download-blob';
 
-/** Triggers a browser download for a CSV export response (API.md section 111's sync export path). */
+/** API.md section 111's sync export path. */
 async function downloadCsv(path: string, params: object, filename: string): Promise<void> {
-  const { data } = await apiClient.get<Blob>(path, { params, responseType: 'blob' });
-  const url = URL.createObjectURL(data);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+  await downloadBlob(path, filename, params);
 }
 
 export const reportsApi = {

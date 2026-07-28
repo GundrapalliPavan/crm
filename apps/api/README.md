@@ -395,6 +395,98 @@ Notable behaviour:
   quotation/sales-order aggregates over the same resolved member set, gated by `report.view` like every
   other report.
 
+## File Attachments
+
+A platform capability, not its own module page (ARCHITECTURE.md sections 62-67, technical/API.md
+sections 96-99, technical/DATABASE.md sections 93-95): upload, entity-scoped list, download and
+delete for files attached to any of the ten `RelatedEntityType`s Communication already attaches to
+(Lead, Contact, Company, Quotation, Sales Order, Purchase Order, Goods Receipt, Invoice, Payment,
+Product). `File`/`FileLink` existed in the schema since Phase 0 and were completely unused - no
+migration was needed. The signed-upload flow (API.md section 98, for very large files), PDF
+generation (sections 65, 78), malware scanning, and file versioning on regeneration (DATABASE.md
+section 96) are explicitly deferred.
+
+Notable behaviour:
+
+- **`StorageProvider` is a swappable abstraction, same shape as `CommunicationProvider`**
+  (`infrastructure/storage/storage-provider.interface.ts`, injected as `STORAGE_PROVIDER`) - business
+  code never touches a specific object-storage SDK. Unlike Communication's honest-failure stub,
+  local development gets a fully working implementation
+  (`LocalFilesystemStorageProvider`, writing under `STORAGE_LOCAL_PATH` or `apps/api/uploads` by
+  default) rather than a "not configured" placeholder, per PROJECT_SETUP.md section 23 ("Local
+  development may use local storage"). A cloud provider (Google Cloud Storage) is a later binding
+  swap in `files.module.ts`.
+- **One `File` links to exactly one entity in this pass** - upload always creates both rows together,
+  so `FileLink`, not the bare `File`, is the natural root for "what's attached to this record."
+- **Entity-existence validation is shared with Communication**, not reimplemented: promoted from
+  `communications.service.ts` into `common/entities/entity-existence.ts` once Files needed the
+  identical polymorphic check a second time.
+- **Storage keys are generated (`{entityType}/{uuid}{ext}`), never derived from the uploaded
+  filename** (PROJECT_SETUP.md: "Generate controlled storage names instead of blindly using uploaded
+  filenames") - the original filename is preserved separately as display-only metadata.
+- **Deletion is a soft delete of the metadata row** (`File.deletedAt`, matching DATABASE.md section
+  93) **but reclaims the storage bytes immediately** - there is no restore feature in this pass, so
+  keeping orphaned bytes around indefinitely would be pure waste.
+- **Upload validates size (20MB) and MIME type against an allowlist** before touching storage, so a
+  rejected upload always produces a clean `VALIDATION_ERROR`, not a raw multer error.
+- **`file.upload` / `file.read` / `file.delete`** are domain-level permissions, orthogonal to the
+  specific entity a file attaches to - the same simpler design Communication already established
+  with `communication.read` / `communication.send`, rather than delegating to each target entity's
+  own permission set.
+
+## In-App Notifications
+
+A platform capability (PROJECT.md section 26, ARCHITECTURE.md sections 76-80, API.md sections
+100-101): a personal notification inbox - list, unread count, mark-read, mark-all-read - driven by
+internal domain events, not called directly by the business modules that trigger them.
+`Notification` existed in the schema since Phase 0 and was completely unused - no migration was
+needed. Scope for this pass: five trigger events that are pure, synchronous reactions to a user
+action - **Lead Assigned**, **Quotation Approval Required** (only when a discount actually pushes it
+into `approval_pending`), **Purchase Order Approval Required**, **Payment Received** (to the
+customer company's account owner), and **Low Stock** (checked after adjustments/transfers, using
+the existing `minimumStockLevel` field). **Follow-up Due** and **Invoice Overdue** are explicitly
+deferred - both are genuinely time-based rather than action-triggered, so they need a real scheduled
+job, which is new infrastructure and its own decision. **Task Assigned** and **Support Escalation**
+are deferred - neither Tasks nor Customer Service have schema yet. External notification channels
+(Email, WhatsApp, SMS, Web/Mobile Push) are explicitly deferred - PROJECT.md frames them as
+"potential channels," and Communication (Module 8) already established that no real provider exists
+yet.
+
+Notable behaviour:
+
+- **`Domain Event -> Notification Service -> In-App Notification`** (ARCHITECTURE.md section 77),
+  implemented with Nest's own in-process `EventEmitter2` (`@nestjs/event-emitter`) - internal
+  application events, not external event infrastructure (CLAUDE.md section 29). Event names and
+  payload shapes live in `common/events/domain-events.ts`; `NotificationTriggersListener`
+  (`modules/notifications/notification-triggers.listener.ts`) is the only thing that reacts to them
+  today, but any future listener (audit, communication, background work) can subscribe to the same
+  events without the emitting module ever knowing.
+- **A listener failure never fails the business action that triggered it, and never outlives the
+  request either.** `common/events/emit-domain-event.ts`'s `emitDomainEvent()` awaits
+  `emitAsync()` (so no notification write is still in flight after the request/response - or a test's
+  `app.close()` - completes) but swallows and logs any listener error, rather than letting a
+  notification-write failure surface as a failure of the lead assignment, quotation submission, etc.
+  that triggered it (CLAUDE.md section 31's spirit applied to internal events, not just external
+  providers).
+- **Events are emitted only after their transaction commits, never from inside one.** Inventory's
+  low-stock check originally lived inside the adjustment/transfer `$transaction` callback; it was
+  moved to run after the transaction resolves, since a listener side effect (a notification write, on
+  a separate connection) must never be observable before the change it describes is actually durable.
+- **Low Stock fires only on the false -> true crossing**, never on every movement that merely keeps a
+  balance low (PROJECT.md section 26: "Users should not be overwhelmed with unnecessary
+  notifications") - `InventoryService` fetches the balance immediately before a stock-decreasing
+  adjustment or transfer, alongside the one immediately after, and only emits when the "before" state
+  was not low and the "after" state is.
+- **`GET/POST /notifications*` has no `@RequirePermission`** - every authenticated user manages only
+  their own notifications (`WHERE userId = actor.id`, enforced in `NotificationsService`, never a
+  client-supplied filter), the same precedent as `/dashboard`. Requiring a permission to see
+  notifications generated *for* you would be backwards - nobody would have it by default under the
+  current RBAC seed (only Administrator holds any permission at all).
+- **Approval-required notifications fan out to every current holder of the approving permission**
+  (`quotation.approve` / `purchase_order.approve` / `inventory.adjust` for Low Stock), found via
+  `common/users/permission-holders.ts`'s `findUserIdsWithPermission()` - a role/permission join, not
+  a hardcoded role-name check (CLAUDE.md section 21).
+
 ## Scripts
 
 | Command | Description |
@@ -423,12 +515,20 @@ sections, funnel/source/conversion, sales overview and top products/customers, s
 low-stock, purchase overview and supplier spend, invoice register and collections, outstanding
 ageing buckets, CSV export), the communication workflow (template CRUD and duplicate-name
 rejection, send-from-template variable substitution, ad-hoc sends, the honest no-provider-configured
-failure path, related-entity existence validation, filtered history), and the team management
+failure path, related-entity existence validation, filtered history), the team management
 workflow (team CRUD, membership add/remove/reactivate, manager and member existence validation, the
 `team.manage` permission gate, the `?teamId=` filter on leads/quotations/sales-orders, and the team
-performance report) - all with real HTTP requests, not mocked Prisma. Every test gets its own
-application instance so the login endpoint's rate limit cannot leak between tests. Like `test:db`, it
-refuses to run unless `TEST_DATABASE_URL` names a database ending in `_test`.
+performance report), the file attachments workflow (upload against real local-disk storage,
+size/MIME validation, entity-existence validation, entity-scoped listing excluding soft-deleted
+files, download returning the original bytes/filename/content-type, and permission gating), and the
+notifications workflow (each of the five trigger events firing for the right recipient(s) via a real
+action - lead assignment, quotation/purchase-order submission, payment recording, a stock adjustment
+crossing the low-stock threshold - plus the "no notification when nothing should fire" cases,
+per-user scoping, unread count, mark-read, and mark-all-read) - all with real HTTP requests, not
+mocked Prisma, and real bytes on disk (redirected to a dedicated `uploads-test` directory - see
+`test/database/point-app-at-test-db.ts`). Every test gets its own application instance so the login
+endpoint's rate limit cannot leak between tests. Like `test:db`, it refuses to run unless
+`TEST_DATABASE_URL` names a database ending in `_test`.
 
 ## Status
 
@@ -438,7 +538,10 @@ Sales Orders through Order Conversion), Module 5 (Purchase - Supplier profile, P
 Goods Receipts), Module 6 (Billing - Customer profile, Invoices, Payments), Module 7 (Reports &
 Analytics - Dashboard, Leads/Sales/Inventory/Purchase/Billing/Outstanding/Team Performance reports),
 Module 8 (Communication - Templates, Communications log, Unified Communication Timeline slices on
-Lead/Company/Invoice) and Module 9 (Team Management - Teams & Reporting Structure: CRUD, membership,
-manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders) complete, backend and
-frontend. See `PROJECT_SETUP.md` section 67 for the Phase 0 implementation order and this repo's own
-module roadmap for the planned build order after Phase 0.
+Lead/Company/Invoice), Module 9 (Team Management - Teams & Reporting Structure: CRUD, membership,
+manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders), File Attachments (a
+platform capability: upload/list/download/delete, attachable to any of ten entity types) and In-App
+Notifications (a platform capability: five domain-event-driven triggers, personal-scope
+list/unread-count/mark-read) complete, backend and frontend. See `PROJECT_SETUP.md` section 67 for
+the Phase 0 implementation order and this repo's own module roadmap for the planned build order
+after Phase 0.
