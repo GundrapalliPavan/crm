@@ -24,6 +24,10 @@ export class ListSalesOrdersQuery {
   @IsUUID()
   customerCompanyId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  teamId?: string;
+
   /** Matches against the sales order number. */
   @IsOptional()
   @IsString()

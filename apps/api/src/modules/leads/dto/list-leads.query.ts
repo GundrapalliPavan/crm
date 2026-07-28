@@ -54,6 +54,10 @@ export class ListLeadsQuery {
   sourceId?: string;
 
   @IsOptional()
+  @IsUUID()
+  teamId?: string;
+
+  @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()
   unassigned?: boolean;

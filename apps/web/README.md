@@ -59,10 +59,12 @@ Companies, Follow-ups), Module 2 (Product Catalog - Products, Categories, Brands
 Opportunities, Quotations, Sales Orders), Module 5 (Purchase - Supplier profile on the Company
 detail page, Purchase Orders, Goods Receipts), Module 6 (Billing - Customer profile on the Company
 detail page, Invoices, Payments), Module 7 (Reports & Analytics - a role-aware Dashboard at "/",
-plus Leads/Sales/Inventory/Purchase/Billing/Outstanding report pages) and Module 8 (Communication -
-Communications history, Templates management, a "Log Communication" action + timeline slice
-embedded on Lead/Company/Invoice detail pages) complete, with a real navigation shell
-(`components/layout`). Team Management does not exist yet.
+plus Leads/Sales/Inventory/Purchase/Billing/Outstanding/Team Performance report pages), Module 8
+(Communication - Communications history, Templates management, a "Log Communication" action +
+timeline slice embedded on Lead/Company/Invoice detail pages) and Module 9 (Team Management -
+Teams list/detail with membership management, a Team filter on Lead/Quotation/Sales Order lists,
+and a Team assignment control on Lead Detail) complete, with a real navigation shell
+(`components/layout`).
 
 Standalone Sales Order creation is deferred - orders are created via "Convert to Sales Order" on an
 accepted quotation, matching API.md's recommended flow. Standalone Invoice creation follows the same

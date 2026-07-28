@@ -300,10 +300,9 @@ Notable behaviour:
 ## Reports & Analytics (Module 7)
 
 A role-aware `GET /dashboard` plus one dedicated report per domain - Leads, Sales, Inventory,
-Purchase, Billing, Outstanding (REPORTS.md section 148, technical/API.md sections 106-111). Every
-report is a pure read/aggregate query over tables that already exist - no new schema, no new
-migration. Team Performance (`GET /reports/team-performance` is documented in API.md but not
-implemented), Branch reports, Saved/Scheduled Reports, the async large-export job pattern, cross-
+Purchase, Billing, Outstanding, Team Performance (REPORTS.md section 148, technical/API.md sections
+106-111). Every report is a pure read/aggregate query over tables that already exist - no new schema,
+no new migration. Branch reports, Saved/Scheduled Reports, the async large-export job pattern, cross-
 module attribution/profitability reports, AI summaries/forecasting/anomaly detection, and period-
 over-period comparison are explicitly deferred - none are backed by the schema yet, depend on
 infrastructure (a job queue) that doesn't exist, or are explicitly framed as future-platform
@@ -315,10 +314,10 @@ Notable behaviour:
   inventory/billing) appears only if the caller's own permission set includes that domain's `*.read`
   code - never `if (role === 'Sales Manager')` (CLAUDE.md section 21). A Sales Executive naturally
   sees fewer cards than an Administrator without any special-casing on either the frontend or backend.
-- **Team Performance is deferred, not just out of scope for this pass**: `Team`/`TeamMember` exist in
-  the schema (Step 3) but are completely unused - there is no Team management module yet to create or
-  assign one. Reporting on it now would report against permanently-empty data; this should follow,
-  not precede, a real Team Management module.
+- **Team Performance (`GET /reports/team-performance`) was deferred here and completed in Module 9**:
+  `Team`/`TeamMember` existed in the schema (Step 3) but were completely unused until Module 9 built a
+  Teams module to create and assign them - reporting on it earlier would have reported against
+  permanently-empty data.
 - **CSV export is synchronous** (`GET /reports/{name}/export?format=csv`), matching API.md section
   111's "small report" path - every report here is a bounded aggregate query, so the async
   `POST /report-exports` job pattern (which would need queue infrastructure that doesn't exist) was
@@ -367,6 +366,35 @@ Notable behaviour:
   own wording ("may include") frames those as optional sugar, not a requirement, and the generic
   filtered endpoint already serves the same data.
 
+## Team Management (Module 9)
+
+Teams & Reporting Structure only, per explicit scope direction (PROJECT.md section 18,
+technical/API.md section 102): Team CRUD, membership, manager assignment, team-scoped visibility on
+Leads/Quotations/Sales Orders, and the Team Performance report. `Team`/`TeamMember` existed in the
+schema since Phase 0 and were completely unused - no migration was needed. Territories, Tasks, Daily
+Activities, Attendance, GPS Check-ins, Meeting Reports, Targets, Expense Claims, Leave and Travel Logs
+are explicitly deferred - none have schema or an approved design, and several raise business-policy
+questions (Attendance, Leave, Expense Claims, GPS tracking) that have not been answered yet.
+
+Notable behaviour:
+
+- **A single `team.manage` permission gates every `/teams` route, reads included** - there is no
+  separate `team.read`, mirroring the existing `role.manage` precedent (`RolesController` gates its
+  own `GET` routes the same way).
+- **Removing a member is a soft removal**: `TeamMember.isActive` is set to `false` rather than deleting
+  the row, preserving `joinedAt` history; re-adding the same user reactivates the row (and refreshes
+  `joinedAt`) instead of violating the `(teamId, userId)` unique constraint with a second insert.
+- **Lead already carried `assignedTeamId`** (accepted since Module 1 but never validated or surfaced in
+  any UI) - Module 9 closes that gap: `?teamId=` filters `GET /leads` directly against the column, and
+  both `POST /leads` and `POST /leads/{id}/assign` now validate the team actually exists.
+- **Quotations and Sales Orders have no team column**, only an `ownerId` - their `?teamId=` filter
+  resolves the team's active member user IDs first (`common/teams/team-scope.ts`), then filters
+  `ownerId IN (...)`. An unknown or empty team simply yields no matches, same as any other filter that
+  narrows to nothing.
+- **Team Performance (`GET /reports/team-performance`) closes the Module 7 deferral** - per-team lead/
+  quotation/sales-order aggregates over the same resolved member set, gated by `report.view` like every
+  other report.
+
 ## Scripts
 
 | Command | Description |
@@ -393,12 +421,14 @@ inventory crediting, over-receipt rejection), and the customer-profile/invoice/p
 outstanding-invoices lookup), the dashboard/reports workflow (permission-gated dashboard
 sections, funnel/source/conversion, sales overview and top products/customers, stock summary and
 low-stock, purchase overview and supplier spend, invoice register and collections, outstanding
-ageing buckets, CSV export), and the communication workflow (template CRUD and duplicate-name
+ageing buckets, CSV export), the communication workflow (template CRUD and duplicate-name
 rejection, send-from-template variable substitution, ad-hoc sends, the honest no-provider-configured
-failure path, related-entity existence validation, filtered history) - all with real HTTP requests,
-not mocked Prisma. Every test gets its own application instance so the login endpoint's rate limit
-cannot leak between tests. Like `test:db`, it refuses to run unless `TEST_DATABASE_URL` names a
-database ending in `_test`.
+failure path, related-entity existence validation, filtered history), and the team management
+workflow (team CRUD, membership add/remove/reactivate, manager and member existence validation, the
+`team.manage` permission gate, the `?teamId=` filter on leads/quotations/sales-orders, and the team
+performance report) - all with real HTTP requests, not mocked Prisma. Every test gets its own
+application instance so the login endpoint's rate limit cannot leak between tests. Like `test:db`, it
+refuses to run unless `TEST_DATABASE_URL` names a database ending in `_test`.
 
 ## Status
 
@@ -406,8 +436,9 @@ Authentication/RBAC foundation, Module 1 (CRM & Lead Management), Module 2 (Prod
 Module 3 (Inventory - Foundation tier plus Adjustments/Transfers), Module 4 (Sales - Quotations and
 Sales Orders through Order Conversion), Module 5 (Purchase - Supplier profile, Purchase Orders,
 Goods Receipts), Module 6 (Billing - Customer profile, Invoices, Payments), Module 7 (Reports &
-Analytics - Dashboard, Leads/Sales/Inventory/Purchase/Billing/Outstanding reports) and Module 8
-(Communication - Templates, Communications log, Unified Communication Timeline slices on Lead/
-Company/Invoice) complete, backend and frontend. Team Management does not exist yet - see
-`PROJECT_SETUP.md` section 67 for the Phase 0 implementation order and this repo's own module
-roadmap for the planned build order after Phase 0.
+Analytics - Dashboard, Leads/Sales/Inventory/Purchase/Billing/Outstanding/Team Performance reports),
+Module 8 (Communication - Templates, Communications log, Unified Communication Timeline slices on
+Lead/Company/Invoice) and Module 9 (Team Management - Teams & Reporting Structure: CRUD, membership,
+manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders) complete, backend and
+frontend. See `PROJECT_SETUP.md` section 67 for the Phase 0 implementation order and this repo's own
+module roadmap for the planned build order after Phase 0.

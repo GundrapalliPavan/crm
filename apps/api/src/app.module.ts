@@ -34,6 +34,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { TeamsModule } from './modules/teams/teams.module';
 import { UnitsModule } from './modules/units/units.module';
 import { UsersModule } from './modules/users/users.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
@@ -89,6 +90,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     ReportsModule,
     CommunicationTemplatesModule,
     CommunicationsModule,
+    TeamsModule,
     HealthModule,
   ],
   providers: [

@@ -8,6 +8,7 @@ import { OutstandingReportService } from './outstanding-report.service';
 import { PurchaseReportService } from './purchase-report.service';
 import { ReportsController } from './reports.controller';
 import { SalesReportService } from './sales-report.service';
+import { TeamPerformanceReportService } from './team-performance-report.service';
 
 @Module({
   controllers: [DashboardController, ReportsController],
@@ -19,6 +20,7 @@ import { SalesReportService } from './sales-report.service';
     PurchaseReportService,
     BillingReportService,
     OutstandingReportService,
+    TeamPerformanceReportService,
   ],
 })
 export class ReportsModule {}

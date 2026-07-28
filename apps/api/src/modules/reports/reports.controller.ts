@@ -6,6 +6,7 @@ import type {
   OutstandingReportResponse,
   PurchaseReportResponse,
   SalesReportResponse,
+  TeamPerformanceReportResponse,
 } from '@crm/types';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { BillingReportQuery } from './dto/billing-report.query';
@@ -14,12 +15,14 @@ import { LeadsReportQuery } from './dto/leads-report.query';
 import { OutstandingReportQuery } from './dto/outstanding-report.query';
 import { PurchaseReportQuery } from './dto/purchase-report.query';
 import { SalesReportQuery } from './dto/sales-report.query';
+import { TeamPerformanceReportQuery } from './dto/team-performance-report.query';
 import { BillingReportService } from './billing-report.service';
 import { InventoryReportService } from './inventory-report.service';
 import { LeadsReportService } from './leads-report.service';
 import { OutstandingReportService } from './outstanding-report.service';
 import { PurchaseReportService } from './purchase-report.service';
 import { SalesReportService } from './sales-report.service';
+import { TeamPerformanceReportService } from './team-performance-report.service';
 
 /** API.md sections 106-107, 111. Dedicated read endpoints per domain, each with a sync CSV export. */
 @Controller('reports')
@@ -31,6 +34,7 @@ export class ReportsController {
     private readonly purchaseReportService: PurchaseReportService,
     private readonly billingReportService: BillingReportService,
     private readonly outstandingReportService: OutstandingReportService,
+    private readonly teamPerformanceReportService: TeamPerformanceReportService,
   ) {}
 
   @RequirePermission('report.view')
@@ -115,5 +119,21 @@ export class ReportsController {
   @Header('Content-Disposition', 'attachment; filename="outstanding-report.csv"')
   getOutstandingReportCsv(@Query() query: OutstandingReportQuery): Promise<string> {
     return this.outstandingReportService.getReportCsv(query);
+  }
+
+  @RequirePermission('report.view')
+  @Get('team-performance')
+  getTeamPerformanceReport(
+    @Query() query: TeamPerformanceReportQuery,
+  ): Promise<TeamPerformanceReportResponse> {
+    return this.teamPerformanceReportService.getReport(query);
+  }
+
+  @RequirePermission('report.export')
+  @Get('team-performance/export')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="team-performance-report.csv"')
+  getTeamPerformanceReportCsv(@Query() query: TeamPerformanceReportQuery): Promise<string> {
+    return this.teamPerformanceReportService.getReportCsv(query);
   }
 }

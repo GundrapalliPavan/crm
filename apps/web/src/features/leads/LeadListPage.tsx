@@ -7,6 +7,7 @@ import { Button } from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Select } from '@/components/common/Select';
 import { TextField } from '@/components/common/TextField';
+import { useTeams } from '@/features/teams/useTeams';
 import { useAuth } from '@/lib/auth/useAuth';
 import type { ListLeadsParams } from './api';
 import { LeadCreateModal } from './LeadCreateModal';
@@ -28,14 +29,16 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
 /** UX.md sections 20-24, 28: prioritises name/business/stage/priority/owner/next follow-up, and
  *  the quick filters that answer "what needs my attention" without opening every lead. */
 export function LeadListPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const navigate = useNavigate();
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<LeadStatus | ''>('');
   const [priority, setPriority] = useState<LeadPriority | ''>('');
+  const [teamId, setTeamId] = useState('');
   const [page, setPage] = useState(1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const { data: teams } = useTeams({ isActive: true }, { enabled: can('team.manage') });
 
   const params: ListLeadsParams = {
     page,
@@ -43,6 +46,7 @@ export function LeadListPage() {
     search: search || undefined,
     status: status || undefined,
     priority: priority || undefined,
+    teamId: teamId || undefined,
     assignedTo: quickFilter === 'mine' ? user?.id : undefined,
     unassigned: quickFilter === 'unassigned' ? true : undefined,
     overdueFollowUp: quickFilter === 'overdue' ? true : undefined,
@@ -125,6 +129,20 @@ export function LeadListPage() {
             options={LEAD_PRIORITIES.map((value) => ({ value, label: leadPriorityLabel(value) }))}
           />
         </div>
+        {can('team.manage') && (
+          <div className="w-48">
+            <Select
+              label="Team"
+              placeholder="Any team"
+              value={teamId}
+              onChange={(event) => {
+                setTeamId(event.target.value);
+                setPage(1);
+              }}
+              options={(teams?.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
+            />
+          </div>
+        )}
       </div>
 
       {isError && (

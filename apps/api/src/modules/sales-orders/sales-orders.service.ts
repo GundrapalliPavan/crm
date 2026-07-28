@@ -15,6 +15,7 @@ import {
 } from '../../common/commercial/quotation-line-calculator';
 import { BusinessRuleError, NotFoundError } from '../../common/errors/app-error';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
+import { resolveTeamMemberUserIds } from '../../common/teams/team-scope';
 import { PrismaService } from '../../database/prisma.service';
 import { CancelSalesOrderDto } from './dto/cancel-sales-order.dto';
 import { CreateSalesOrderDto } from './dto/create-sales-order.dto';
@@ -44,6 +45,9 @@ export class SalesOrdersService {
     if (query.status) where.status = query.status;
     if (query.customerCompanyId) where.customerCompanyId = query.customerCompanyId;
     if (query.q) where.salesOrderNumber = { contains: query.q.trim(), mode: 'insensitive' };
+    if (query.teamId) {
+      where.ownerId = { in: await resolveTeamMemberUserIds(this.prisma, query.teamId) };
+    }
 
     const [rows, totalItems] = await Promise.all([
       this.prisma.salesOrder.findMany({

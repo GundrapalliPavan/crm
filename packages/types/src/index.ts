@@ -8,3 +8,4 @@ export * from './sales';
 export * from './purchase';
 export * from './reports';
 export * from './communication';
+export * from './teams';

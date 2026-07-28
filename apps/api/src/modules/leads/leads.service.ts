@@ -43,6 +43,7 @@ export class LeadsService {
     if (query.sourceId) where.sourceId = query.sourceId;
     if (query.assignedTo) where.assignedTo = query.assignedTo;
     if (query.unassigned) where.assignedTo = null;
+    if (query.teamId) where.assignedTeamId = query.teamId;
 
     if (query.overdueFollowUp) {
       where.nextFollowUpAt = { lt: new Date() };
@@ -110,6 +111,9 @@ export class LeadsService {
 
     if (!dto.confirmDuplicate) {
       await this.assertNoDuplicate(phoneNormalized, emailNormalized);
+    }
+    if (dto.assignedTeamId) {
+      await this.assertTeamExists(dto.assignedTeamId);
     }
 
     const lead = await this.prisma.lead.create({
@@ -188,6 +192,9 @@ export class LeadsService {
     const existing = await this.prisma.lead.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Lead not found.');
+    }
+    if (dto.teamId) {
+      await this.assertTeamExists(dto.teamId);
     }
 
     const lead = await this.prisma.lead.update({
@@ -352,6 +359,13 @@ export class LeadsService {
     await this.prisma.leadActivity.create({
       data: { leadId, activityType, title, performedBy, metadata },
     });
+  }
+
+  private async assertTeamExists(teamId: string): Promise<void> {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) {
+      throw new NotFoundError('Team not found.');
+    }
   }
 
   private async assertNoDuplicate(

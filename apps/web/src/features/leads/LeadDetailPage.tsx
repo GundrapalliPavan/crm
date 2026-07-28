@@ -5,7 +5,9 @@ import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Select } from '@/components/common/Select';
 import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
+import { useTeams } from '@/features/teams/useTeams';
 import { useAssignableUsers } from '@/features/users/useUsers';
+import { useAuth } from '@/lib/auth/useAuth';
 import { LeadActivityTimeline } from './LeadActivityTimeline';
 import { LeadFollowUpsPanel } from './LeadFollowUpsPanel';
 import { LeadStatusDialog } from './LeadStatusDialog';
@@ -21,8 +23,10 @@ import { useArchiveLead, useAssignLead, useConvertLead, useLead } from './useLea
 export function LeadDetailPage() {
   const { leadId } = useParams<{ leadId: string }>();
   const navigate = useNavigate();
+  const { can } = useAuth();
   const { data: lead, isLoading, isError } = useLead(leadId ?? '');
   const { data: users } = useAssignableUsers();
+  const { data: teams } = useTeams({ isActive: true }, { enabled: can('team.manage') });
   const assignLead = useAssignLead(leadId ?? '');
   const convertLead = useConvertLead(leadId ?? '');
   const archiveLead = useArchiveLead();
@@ -76,6 +80,17 @@ export function LeadDetailPage() {
                 }))}
               />
             </div>
+            {can('team.manage') && (
+              <div className="w-48">
+                <Select
+                  label="Team"
+                  placeholder="No team"
+                  value={lead.assignedTeam?.id ?? ''}
+                  onChange={(event) => void assignLead.mutateAsync({ teamId: event.target.value || undefined })}
+                  options={(teams?.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
+                />
+              </div>
+            )}
             {lead.status !== 'converted' && (
               <Button variant="secondary" size="sm" onClick={() => setIsConvertOpen(true)}>
                 Convert
