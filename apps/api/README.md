@@ -310,10 +310,25 @@ capability in REPORTS.md itself.
 
 Notable behaviour:
 
-- **The dashboard is permission-driven, not role-name-driven**: each section (leads/sales/purchase/
-  inventory/billing) appears only if the caller's own permission set includes that domain's `*.read`
-  code - never `if (role === 'Sales Manager')` (CLAUDE.md section 21). A Sales Executive naturally
-  sees fewer cards than an Administrator without any special-casing on either the frontend or backend.
+- **The dashboard is permission-driven, not role-name-driven**: each section (followUps/leads/sales/
+  purchase/inventory/billing) appears only if the caller's own permission set includes that domain's
+  `*.read` code - never `if (role === 'Sales Manager')` (CLAUDE.md section 21). A Sales Executive
+  naturally sees fewer cards than an Administrator without any special-casing on either the frontend
+  or backend.
+- **`followUps` closes a real gap**: PROJECT.md section 29 ("Which leads require follow-up?") and
+  API.md section 109's own conceptual dashboard sketch both call for it, but it was missing from the
+  first Dashboard pass - `FollowUp`'s `[assignedTo, status, scheduledAt]` index was already annotated
+  "drives the 'my follow-ups due' queue" and simply had no query built against it yet. Always scoped
+  to the caller's own pending follow-ups regardless of role (team-wide follow-up completion belongs to
+  the existing Team Performance report, not this personal queue), split into `dueToday`/`overdue`
+  counts plus a short (5-item) actionable list with a resolved `entityLabel` (the lead/contact/company
+  name) and that record's id, so the frontend can link straight to it.
+- **The frontend groups sections by urgency, not by domain**: "Needs your attention" (follow-ups,
+  quotations awaiting approval, low stock, overdue invoices - danger-accented when something is
+  overdue), "My work" (the actionable follow-up list), then "Business snapshot" (the original per-
+  domain KPI cards, unchanged, demoted to a supporting role) - PROJECT.md section 29 frames the
+  dashboard as "not primarily a reporting page," so raw counts alone were reorganized around what the
+  caller should actually do next rather than replaced.
 - **Team Performance (`GET /reports/team-performance`) was deferred here and completed in Module 9**:
   `Team`/`TeamMember` existed in the schema (Step 3) but were completely unused until Module 9 built a
   Teams module to create and assign them - reporting on it earlier would have reported against

@@ -112,6 +112,23 @@ describe('Reports (e2e)', () => {
     });
   }
 
+  async function seedFollowUp(options: {
+    leadId: string;
+    assignedTo: string;
+    scheduledAt: Date;
+    status?: 'pending' | 'completed';
+  }) {
+    return testPrisma.followUp.create({
+      data: {
+        leadId: options.leadId,
+        assignedTo: options.assignedTo,
+        followUpType: 'call',
+        scheduledAt: options.scheduledAt,
+        status: options.status ?? 'pending',
+      },
+    });
+  }
+
   async function seedCustomer(options: { stateCode?: string | null } = {}) {
     return testPrisma.company.create({
       data: { name: `Customer-${randomUUID()}`, isCustomer: true, stateCode: options.stateCode ?? '36' },
@@ -139,11 +156,41 @@ describe('Reports (e2e)', () => {
       const { auth } = await authedRequest();
       const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
 
+      expect(response.body).toHaveProperty('followUps');
       expect(response.body).toHaveProperty('leads');
       expect(response.body).toHaveProperty('sales');
       expect(response.body).toHaveProperty('purchase');
       expect(response.body).toHaveProperty('inventory');
       expect(response.body).toHaveProperty('billing');
+    });
+
+    it('omits followUps for an actor without follow_up.read', async () => {
+      const { auth } = await userWithOnlyPermissions(['lead.read']);
+      const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
+      expect(response.body).not.toHaveProperty('followUps');
+    });
+
+    it('counts only the actor\'s own pending follow-ups, split into due-today and overdue', async () => {
+      const { auth, user } = await authedRequest();
+      const lead = await seedLead({ assignedTo: user.id });
+      const yesterday = new Date();
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      const tomorrow = new Date();
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+      await seedFollowUp({ leadId: lead.id, assignedTo: user.id, scheduledAt: new Date() }); // due today
+      await seedFollowUp({ leadId: lead.id, assignedTo: user.id, scheduledAt: yesterday }); // overdue
+      await seedFollowUp({ leadId: lead.id, assignedTo: user.id, scheduledAt: tomorrow }); // not yet due
+      await seedFollowUp({ leadId: lead.id, assignedTo: user.id, scheduledAt: yesterday, status: 'completed' }); // done, excluded
+      const otherUser = await createUser();
+      await seedFollowUp({ leadId: lead.id, assignedTo: otherUser.id, scheduledAt: new Date() }); // someone else's
+
+      const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
+
+      expect(response.body.followUps).toMatchObject({ dueToday: 1, overdue: 1 });
+      expect(response.body.followUps.items).toHaveLength(2);
+      expect(response.body.followUps.items[0].isOverdue).toBe(true);
+      expect(response.body.followUps.items[0].entityLabel).toBe(lead.firstName);
     });
 
     it('returns only the leads section for an actor holding only lead.read', async () => {

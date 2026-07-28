@@ -54,8 +54,39 @@ export interface DashboardBillingSection {
   overdueInvoiceCount: number;
 }
 
+export interface DashboardFollowUpItem {
+  id: string;
+  /** Display name of the lead, contact, or company the follow-up relates to. */
+  entityLabel: string;
+  /** Exactly one is set - mirrors FollowUp's own leadId/contactId/companyId shape, so the frontend can link to the right detail page. */
+  leadId: string | null;
+  contactId: string | null;
+  companyId: string | null;
+  followUpType: string;
+  scheduledAt: string;
+  isOverdue: boolean;
+}
+
+/**
+ * PROJECT.md section 29 ("Which leads require follow-up?") and API.md
+ * section 109's own conceptual dashboard sketch both call for this - it was
+ * missing from the first Dashboard pass (Module 7) despite the schema
+ * already anticipating it (FollowUp's `[assignedTo, status, scheduledAt]`
+ * index is annotated "drives the 'my follow-ups due' queue"). Always scoped
+ * to the caller's own pending follow-ups, regardless of role - team-wide
+ * follow-up completion belongs to the existing Team Performance report
+ * (Module 9), not this personal "what's due" queue.
+ */
+export interface DashboardFollowUpsSection {
+  dueToday: number;
+  overdue: number;
+  /** Soonest-due first, capped to a short actionable list - not a full page. */
+  items: DashboardFollowUpItem[];
+}
+
 /** Only the sections the caller's own permissions unlock are present - API.md section 109-110. */
 export interface DashboardResponse {
+  followUps?: DashboardFollowUpsSection;
   leads?: DashboardLeadsSection;
   sales?: DashboardSalesSection;
   purchase?: DashboardPurchaseSection;
