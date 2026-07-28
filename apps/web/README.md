@@ -61,9 +61,13 @@ detail page, Purchase Orders, Goods Receipts), Module 6 (Billing - Customer prof
 detail page, Invoices, Payments), Module 7 (Reports & Analytics - a role-aware Dashboard at "/",
 plus Leads/Sales/Inventory/Purchase/Billing/Outstanding/Team Performance report pages), Module 8
 (Communication - Communications history, Templates management, a "Log Communication" action +
-timeline slice embedded on Lead/Company/Invoice detail pages) and Module 9 (Team Management -
+timeline slice embedded on Lead/Company/Invoice detail pages), Module 9 (Team Management -
 Teams list/detail with membership management, a Team filter on Lead/Quotation/Sales Order lists,
-and a Team assignment control on Lead Detail) complete, with a real navigation shell
+and a Team assignment control on Lead Detail), File Attachments (an "Attachments" section - upload,
+download, remove - embedded on every detail page: Lead, Contact, Company, Quotation, Sales Order,
+Purchase Order, Goods Receipt, Invoice, Payment, Product), and In-App Notifications (a bell in the
+top bar - unread badge polled every 30s, a dropdown of recent notifications, mark-read on click with
+navigation to the related record, mark-all-read) complete, with a real navigation shell
 (`components/layout`).
 
 Standalone Sales Order creation is deferred - orders are created via "Convert to Sales Order" on an

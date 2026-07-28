@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useArchiveProduct, useProduct } from './useProducts';
 
 export function ProductDetailPage() {
@@ -77,6 +78,8 @@ export function ProductDetailPage() {
           </div>
         )}
       </div>
+
+      <FileAttachmentsSection relatedEntityType="product" relatedEntityId={product.id} />
 
       {isArchiveOpen && (
         <ConfirmDialog

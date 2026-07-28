@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { CancelWithReasonDialog } from '@/components/common/CancelWithReasonDialog';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { ApiError } from '@/lib/api/api-error';
 import { useAuth } from '@/lib/auth/useAuth';
 import { paymentMethodLabel, paymentStatusLabel, paymentStatusTone } from './labels';
@@ -109,6 +110,8 @@ export function PaymentDetailPage() {
           </tbody>
         </table>
       </div>
+
+      <FileAttachmentsSection relatedEntityType="payment" relatedEntityId={payment.id} />
 
       {isCancelOpen && (
         <CancelWithReasonDialog

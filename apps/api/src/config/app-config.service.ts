@@ -1,6 +1,10 @@
+import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EnvironmentVariables, NodeEnv } from './env.validation';
+
+/** Resolved from this file's location, not `process.cwd()` - see config.module.ts's ENV_FILE_PATH for why. */
+const DEFAULT_STORAGE_LOCAL_PATH = join(__dirname, '..', '..', 'uploads');
 
 /**
  * Typed access to validated configuration.
@@ -55,5 +59,9 @@ export class AppConfigService {
 
   get bootstrapAdminPassword(): string | undefined {
     return this.config.get('BOOTSTRAP_ADMIN_PASSWORD', { infer: true });
+  }
+
+  get storageLocalPath(): string {
+    return this.config.get('STORAGE_LOCAL_PATH', { infer: true }) ?? DEFAULT_STORAGE_LOCAL_PATH;
   }
 }

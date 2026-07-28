@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Quotation, QuotationSummary, SalesOrder } from '@crm/types';
 import { AuditService } from '../../common/audit/audit.service';
+import { DOMAIN_EVENTS } from '../../common/events/domain-events';
+import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import { BusinessRuleError, ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { calculateDocumentTotals, resolveLine, type ProductForLineResolution } from '../../common/commercial/quotation-line-calculator';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
@@ -29,6 +32,7 @@ export class QuotationsService {
     private readonly prisma: PrismaService,
     private readonly numbering: DocumentNumberingService,
     private readonly auditService: AuditService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async list(query: ListQuotationsQuery): Promise<ApiCollectionResponse<QuotationSummary>> {
@@ -163,6 +167,12 @@ export class QuotationsService {
       data: { status: nextStatus },
       include: QUOTATION_DETAIL_INCLUDE,
     });
+    if (nextStatus === 'approval_pending') {
+      await emitDomainEvent(this.events, DOMAIN_EVENTS.quotationApprovalRequired, {
+        quotationId: quotation.id,
+        quotationNumber: quotation.quotationNumber,
+      });
+    }
     return toQuotation(quotation);
   }
 

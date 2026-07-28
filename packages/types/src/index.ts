@@ -9,3 +9,5 @@ export * from './purchase';
 export * from './reports';
 export * from './communication';
 export * from './teams';
+export * from './files';
+export * from './notifications';

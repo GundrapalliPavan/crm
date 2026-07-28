@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, type Lead as PrismaLead } from '@prisma/client';
 import type { ApiCollectionResponse, Lead, LeadActivity, LeadActivityType } from '@crm/types';
 import { AuditService } from '../../common/audit/audit.service';
+import { DOMAIN_EVENTS } from '../../common/events/domain-events';
+import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import {
   BusinessRuleError,
   ConflictError,
@@ -32,6 +35,7 @@ export class LeadsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async list(query: ListLeadsQuery): Promise<ApiCollectionResponse<Lead>> {
@@ -144,6 +148,11 @@ export class LeadsService {
       await this.recordActivity(lead.id, 'assigned', 'Lead assigned', actorUserId, {
         assignedTo: dto.assignedTo,
       });
+      await emitDomainEvent(this.events, DOMAIN_EVENTS.leadAssigned, {
+        leadId: lead.id,
+        leadName: this.displayName(lead),
+        assigneeUserId: dto.assignedTo,
+      });
     }
 
     return toLead(lead);
@@ -208,6 +217,13 @@ export class LeadsService {
       newAssignee: dto.userId ?? null,
       newTeam: dto.teamId ?? null,
     });
+    if (dto.userId && dto.userId !== existing.assignedTo) {
+      await emitDomainEvent(this.events, DOMAIN_EVENTS.leadAssigned, {
+        leadId: lead.id,
+        leadName: this.displayName(lead),
+        assigneeUserId: dto.userId,
+      });
+    }
 
     return toLead(lead);
   }

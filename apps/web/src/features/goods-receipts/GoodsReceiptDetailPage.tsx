@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from 'react-router';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useGoodsReceipt } from './useGoodsReceipts';
 
 export function GoodsReceiptDetailPage() {
@@ -76,6 +77,8 @@ export function GoodsReceiptDetailPage() {
           </tbody>
         </table>
       </div>
+
+      <FileAttachmentsSection relatedEntityType="goods_receipt" relatedEntityId={receipt.id} />
     </div>
   );
 }

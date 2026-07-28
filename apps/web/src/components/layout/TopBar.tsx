@@ -1,4 +1,5 @@
 import { Button } from '@/components/common/Button';
+import { NotificationBell } from '@/features/notifications/NotificationBell';
 import { useAuth } from '@/lib/auth/useAuth';
 
 /**
@@ -11,6 +12,7 @@ export function TopBar() {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6">
+      <NotificationBell />
       <span className="text-sm text-[var(--color-text-secondary)]">
         {user?.firstName} {user?.lastName}
       </span>

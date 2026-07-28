@@ -1,5 +1,6 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './common/audit/audit.module';
 import { DocumentsModule } from './common/documents/documents.module';
@@ -18,6 +19,7 @@ import { CommunicationsModule } from './modules/communications/communications.mo
 import { CompaniesModule } from './modules/companies/companies.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { FilesModule } from './modules/files/files.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module';
 import { HealthModule } from './modules/health/health.module';
@@ -25,6 +27,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { LeadSourcesModule } from './modules/lead-sources/lead-sources.module';
 import { LeadsModule } from './modules/leads/leads.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
 import { ProductsModule } from './modules/products/products.module';
@@ -65,6 +68,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     AuditModule,
     DocumentsModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
+    EventEmitterModule.forRoot(),
     AuthModule,
     UsersModule,
     RolesModule,
@@ -91,6 +95,8 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     CommunicationTemplatesModule,
     CommunicationsModule,
     TeamsModule,
+    FilesModule,
+    NotificationsModule,
     HealthModule,
   ],
   providers: [

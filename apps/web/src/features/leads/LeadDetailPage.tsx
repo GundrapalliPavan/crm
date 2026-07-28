@@ -5,6 +5,7 @@ import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Select } from '@/components/common/Select';
 import { CommunicationLogSection } from '@/features/communications/CommunicationLogSection';
+import { FileAttachmentsSection } from '@/features/files/FileAttachmentsSection';
 import { useTeams } from '@/features/teams/useTeams';
 import { useAssignableUsers } from '@/features/users/useUsers';
 import { useAuth } from '@/lib/auth/useAuth';
@@ -154,6 +155,8 @@ export function LeadDetailPage() {
           <LeadActivityTimeline leadId={lead.id} />
         </section>
       </div>
+
+      <FileAttachmentsSection relatedEntityType="lead" relatedEntityId={lead.id} />
 
       <CommunicationLogSection relatedEntityType="lead" relatedEntityId={lead.id} />
 

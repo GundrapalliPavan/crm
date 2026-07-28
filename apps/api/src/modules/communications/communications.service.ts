@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { ApiCollectionResponse, Communication, RelatedEntityType } from '@crm/types';
+import type { ApiCollectionResponse, Communication } from '@crm/types';
 import { resolveTemplate } from '../../common/communication/template-variables';
+import { assertEntityExists } from '../../common/entities/entity-existence';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -79,7 +80,7 @@ export class CommunicationsService {
           relatedEntityType: ['relatedEntityType and relatedEntityId must be provided together.'],
         });
       }
-      await this.assertEntityExists(dto.relatedEntityType, dto.relatedEntityId);
+      await assertEntityExists(this.prisma, dto.relatedEntityType, dto.relatedEntityId);
     }
 
     const { subject, messageBody } = await this.resolveContent(dto);
@@ -138,37 +139,5 @@ export class CommunicationsService {
       throw new ValidationError({ messageBody: ['Provide either a templateId or a messageBody.'] });
     }
     return { subject: dto.subject ?? null, messageBody: dto.messageBody };
-  }
-
-  private async assertEntityExists(type: RelatedEntityType, id: string): Promise<void> {
-    const exists = await this.entityExists(type, id);
-    if (!exists) {
-      throw new NotFoundError(`${type.replace('_', ' ')} not found.`);
-    }
-  }
-
-  private async entityExists(type: RelatedEntityType, id: string): Promise<boolean> {
-    switch (type) {
-      case 'lead':
-        return Boolean(await this.prisma.lead.findUnique({ where: { id }, select: { id: true } }));
-      case 'contact':
-        return Boolean(await this.prisma.contact.findUnique({ where: { id }, select: { id: true } }));
-      case 'company':
-        return Boolean(await this.prisma.company.findUnique({ where: { id }, select: { id: true } }));
-      case 'quotation':
-        return Boolean(await this.prisma.quotation.findUnique({ where: { id }, select: { id: true } }));
-      case 'sales_order':
-        return Boolean(await this.prisma.salesOrder.findUnique({ where: { id }, select: { id: true } }));
-      case 'purchase_order':
-        return Boolean(await this.prisma.purchaseOrder.findUnique({ where: { id }, select: { id: true } }));
-      case 'goods_receipt':
-        return Boolean(await this.prisma.goodsReceipt.findUnique({ where: { id }, select: { id: true } }));
-      case 'invoice':
-        return Boolean(await this.prisma.invoice.findUnique({ where: { id }, select: { id: true } }));
-      case 'payment':
-        return Boolean(await this.prisma.payment.findUnique({ where: { id }, select: { id: true } }));
-      case 'product':
-        return Boolean(await this.prisma.product.findUnique({ where: { id }, select: { id: true } }));
-    }
   }
 }
