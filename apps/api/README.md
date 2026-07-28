@@ -334,22 +334,33 @@ Notable behaviour:
 Communication Templates and Communications - the centralized log behind the Unified Communication
 Timeline (PROJECT.md sections 20-27, technical/API.md sections 84-93, DATABASE.md sections 82-92).
 Every table (`communications`, `communication_templates`, `communication_events`) already existed in
-the schema from Phase 0 and was completely unused until this pass - no migration was needed. Real
-WhatsApp/Email/SMS provider integration, webhooks, in-app Notifications (a separate, equally unused
-schema model - wiring real trigger points touches every other module's service layer, which is its
-own pass), Calling, and Automation are explicitly deferred - see `CommunicationProvider` below and
-PROJECT.md sections 25-27.
+the schema from Phase 0 and was completely unused until this pass - no migration was needed. Delivery
+webhooks, Calling, and Automation are explicitly deferred - see PROJECT.md sections 25-27.
 
 Notable behaviour:
 
-- **No real messaging provider exists yet** (`infrastructure/messaging` and `infrastructure/email`
-  were empty placeholders until this pass) - `POST /communications` always ends up `failed` with a
-  clear reason ("No whatsapp provider is configured...") via `UnconfiguredCommunicationProvider`,
-  rather than faking `sent`/`delivered` or leaving the record `queued` forever with nothing that will
-  ever progress it (CLAUDE.md section 31: never treat a request as proof delivery succeeded). Business
-  modules talk to `CommunicationProvider` (`COMMUNICATION_PROVIDER` injection token), an interface -
-  swapping in a real provider later touches only `communications.module.ts`'s binding, never
+- **Real providers are wired per channel**: Twilio for WhatsApp and SMS (one account/SDK for both),
+  SendGrid for Email - chosen as well-supported defaults (CLAUDE.md section 68: external provider
+  choice) since this repository has no pre-existing vendor account. Business modules still only ever
+  talk to `CommunicationProvider` (`COMMUNICATION_PROVIDER` injection token) - `communications.module.ts`
+  binds it to `CompositeCommunicationProvider` (`infrastructure/messaging/providers/`), which routes
+  `send()` to `TwilioWhatsAppProvider`, `TwilioSmsProvider` or `SendGridEmailProvider` by channel.
+  Swapping any single channel's vendor, or the whole composition, touches only that binding - never
   `CommunicationsService` (CLAUDE.md sections 25-27).
+- **Each channel degrades independently and honestly** when its own required env vars
+  (`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_WHATSAPP_FROM`/`TWILIO_SMS_FROM`,
+  `SENDGRID_API_KEY`/`SENDGRID_FROM_EMAIL` - all optional, see `.env.example`) are absent: `POST
+  /communications` ends up `failed` with a clear per-channel reason ("Twilio WhatsApp is not configured
+  for this environment (set ...)"), rather than faking `sent`/`delivered` or leaving the record `queued`
+  forever with nothing that will ever progress it (CLAUDE.md section 31: never treat a request as proof
+  delivery succeeded). No real vendor account exists in this repository, so nothing sends until an
+  operator supplies real credentials as environment variables - Claude/Claude Code never creates vendor
+  accounts or handles real secrets on the user's behalf.
+- **Provider-level behaviour (successful sends, partial configuration, vendor-rejected sends) is unit-
+  tested** against a mocked vendor SDK in `src/infrastructure/messaging/providers/*.spec.ts` (`pnpm
+  test`), independent of the database/HTTP layer. The e2e-live suite (`test/communication.e2e-live-
+  spec.ts`) exercises the honest "not configured" failure path per channel, since this repository's test
+  environment has no real credentials either.
 - **Either an approved template or an ad-hoc message, never neither**: `POST /communications` accepts
   `templateId` + `variables` (substituted into `{{placeholder}}` tokens, with a clear validation error
   listing any variable the caller forgot to supply) or a direct `subject`/`messageBody` - the service
@@ -448,9 +459,10 @@ the existing `minimumStockLevel` field). **Follow-up Due** and **Invoice Overdue
 deferred - both are genuinely time-based rather than action-triggered, so they need a real scheduled
 job, which is new infrastructure and its own decision. **Task Assigned** and **Support Escalation**
 are deferred - neither Tasks nor Customer Service have schema yet. External notification channels
-(Email, WhatsApp, SMS, Web/Mobile Push) are explicitly deferred - PROJECT.md frames them as
-"potential channels," and Communication (Module 8) already established that no real provider exists
-yet.
+(Email, WhatsApp, SMS, Web/Mobile Push) are explicitly deferred - PROJECT.md frames them as "potential
+channels," and this is a distinct decision from Communication's own real providers (Module 8): pushing
+an in-app notification out over Email/WhatsApp/SMS would need its own trigger/template/preference
+design, not just a wired channel.
 
 Notable behaviour:
 

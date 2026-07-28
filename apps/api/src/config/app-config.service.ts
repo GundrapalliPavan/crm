@@ -64,4 +64,28 @@ export class AppConfigService {
   get storageLocalPath(): string {
     return this.config.get('STORAGE_LOCAL_PATH', { infer: true }) ?? DEFAULT_STORAGE_LOCAL_PATH;
   }
+
+  get twilioAccountSid(): string | undefined {
+    return this.config.get('TWILIO_ACCOUNT_SID', { infer: true });
+  }
+
+  get twilioAuthToken(): string | undefined {
+    return this.config.get('TWILIO_AUTH_TOKEN', { infer: true });
+  }
+
+  get twilioWhatsAppFrom(): string | undefined {
+    return this.config.get('TWILIO_WHATSAPP_FROM', { infer: true });
+  }
+
+  get twilioSmsFrom(): string | undefined {
+    return this.config.get('TWILIO_SMS_FROM', { infer: true });
+  }
+
+  get sendGridApiKey(): string | undefined {
+    return this.config.get('SENDGRID_API_KEY', { infer: true });
+  }
+
+  get sendGridFromEmail(): string | undefined {
+    return this.config.get('SENDGRID_FROM_EMAIL', { infer: true });
+  }
 }
