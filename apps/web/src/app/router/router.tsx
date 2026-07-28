@@ -43,15 +43,18 @@ import { SalesReportPage } from '@/features/reports/SalesReportPage';
 import { OpportunitiesPage } from '@/features/sales/OpportunitiesPage';
 import { SalesOrderDetailPage } from '@/features/sales-orders/SalesOrderDetailPage';
 import { SalesOrderListPage } from '@/features/sales-orders/SalesOrderListPage';
+import { TeamPerformanceReportPage } from '@/features/reports/TeamPerformanceReportPage';
+import { TeamDetailPage } from '@/features/teams/TeamDetailPage';
+import { TeamListPage } from '@/features/teams/TeamListPage';
 import { WarehousesPage } from '@/features/warehouses/WarehousesPage';
 
 /**
  * Route table.
  *
- * CRM, Catalog, Inventory, Sales, Purchase, Billing, Reports and
- * Communication routes exist below "/" - Team Management and Settings are
- * separate modules not yet built (UX.md section 13). "/" redirects to
- * "/dashboard" - the role-aware home screen from Module 7.
+ * CRM, Catalog, Inventory, Sales, Purchase, Billing, Reports, Communication
+ * and Team Management routes exist below "/" - Settings is a separate module
+ * not yet built (UX.md section 13). "/" redirects to "/dashboard" - the
+ * role-aware home screen from Module 7.
  */
 export function AppRouter() {
   return (
@@ -106,8 +109,11 @@ export function AppRouter() {
         <Route path="/reports/purchases" element={<PurchaseReportPage />} />
         <Route path="/reports/billing" element={<BillingReportPage />} />
         <Route path="/reports/outstanding" element={<OutstandingReportPage />} />
+        <Route path="/reports/team-performance" element={<TeamPerformanceReportPage />} />
         <Route path="/communications" element={<CommunicationListPage />} />
         <Route path="/communication-templates" element={<CommunicationTemplateListPage />} />
+        <Route path="/teams" element={<TeamListPage />} />
+        <Route path="/teams/:teamId" element={<TeamDetailPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

@@ -15,6 +15,7 @@ export interface ListSalesOrdersParams {
   pageSize?: number;
   status?: SalesOrderStatus;
   customerCompanyId?: string;
+  teamId?: string;
   q?: string;
 }
 

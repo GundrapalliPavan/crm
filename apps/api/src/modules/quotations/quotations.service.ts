@@ -5,6 +5,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { BusinessRuleError, ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { calculateDocumentTotals, resolveLine, type ProductForLineResolution } from '../../common/commercial/quotation-line-calculator';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
+import { resolveTeamMemberUserIds } from '../../common/teams/team-scope';
 import { PrismaService } from '../../database/prisma.service';
 import { SALES_ORDER_DETAIL_INCLUDE, toSalesOrder } from '../sales-orders/sales-order.mapper';
 import { CancelQuotationDto } from './dto/cancel-quotation.dto';
@@ -35,6 +36,9 @@ export class QuotationsService {
     if (query.status) where.status = query.status;
     if (query.customerCompanyId) where.customerCompanyId = query.customerCompanyId;
     if (query.q) where.quotationNumber = { contains: query.q.trim(), mode: 'insensitive' };
+    if (query.teamId) {
+      where.ownerId = { in: await resolveTeamMemberUserIds(this.prisma, query.teamId) };
+    }
 
     const [rows, totalItems] = await Promise.all([
       this.prisma.quotation.findMany({

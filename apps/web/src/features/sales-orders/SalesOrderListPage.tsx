@@ -6,21 +6,27 @@ import { Button } from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Select } from '@/components/common/Select';
 import { TextField } from '@/components/common/TextField';
+import { useTeams } from '@/features/teams/useTeams';
+import { useAuth } from '@/lib/auth/useAuth';
 import { salesOrderStatusLabel, salesOrderStatusTone } from './labels';
 import { useSalesOrdersList } from './useSalesOrders';
 
 /** Standalone order creation is deferred - orders are created via "Convert to Sales Order" on an accepted quotation. */
 export function SalesOrderListPage() {
   const navigate = useNavigate();
+  const { can } = useAuth();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<SalesOrderStatus | ''>('');
+  const [teamId, setTeamId] = useState('');
   const [page, setPage] = useState(1);
+  const { data: teams } = useTeams({ isActive: true }, { enabled: can('team.manage') });
 
   const { data, isLoading, isError } = useSalesOrdersList({
     page,
     pageSize: 25,
     q: search || undefined,
     status: status || undefined,
+    teamId: teamId || undefined,
   });
 
   return (
@@ -56,6 +62,20 @@ export function SalesOrderListPage() {
             options={SALES_ORDER_STATUSES.map((value) => ({ value, label: salesOrderStatusLabel(value) }))}
           />
         </div>
+        {can('team.manage') && (
+          <div className="w-48">
+            <Select
+              label="Team"
+              placeholder="Any team"
+              value={teamId}
+              onChange={(event) => {
+                setTeamId(event.target.value);
+                setPage(1);
+              }}
+              options={(teams?.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
+            />
+          </div>
+        )}
       </div>
 
       {isError && (

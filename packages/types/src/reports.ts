@@ -5,16 +5,16 @@
  * Scope for this pass: a role-aware `GET /dashboard` (each section appears
  * only if the actor holds that domain's own `*.read` permission - not
  * branched on role name) plus one dedicated report per domain (Leads,
- * Sales, Inventory, Purchase, Billing, Outstanding), each with CSV export.
- * Team Performance is deferred - `Team`/`TeamMember` exist in the schema but
- * are completely unused (no Team management module exists yet to create or
- * assign one), so reporting on it now would report against permanently-empty
- * data. Branch reports (no Branch entity), Saved/Scheduled Reports and the
- * async large-export job pattern (no queue infra), cross-module attribution/
- * profitability reports, AI summaries/forecasting/anomaly detection, and
- * period-over-period comparison are explicitly deferred - none are backed by
- * the schema yet, depend on infrastructure that doesn't exist, or are
- * explicitly framed as future-platform capability in REPORTS.md itself.
+ * Sales, Inventory, Purchase, Billing, Outstanding, Team Performance), each
+ * with CSV export. Team Performance was deferred in Module 7 because no Team
+ * management module existed to create or assign one; Module 9 closes that
+ * gap - see `TeamPerformanceReportResponse` below. Branch reports (no Branch
+ * entity), Saved/Scheduled Reports and the async large-export job pattern (no
+ * queue infra), cross-module attribution/profitability reports, AI summaries/
+ * forecasting/anomaly detection, and period-over-period comparison are
+ * explicitly deferred - none are backed by the schema yet, depend on
+ * infrastructure that doesn't exist, or are explicitly framed as
+ * future-platform capability in REPORTS.md itself.
  */
 
 import type { LeadStatus } from './crm';
@@ -234,4 +234,28 @@ export interface OutstandingReportResponse {
   asOf: string;
   totalOutstanding: string;
   byCustomer: OutstandingCustomerRow[];
+}
+
+export interface TeamPerformanceReportQuery extends ReportDateRangeQuery {
+  teamId?: string;
+}
+
+/** REPORTS.md section 7 "Comparison" report type: one row per team, side by side. */
+export interface TeamPerformanceRow {
+  teamId: string;
+  teamName: string;
+  memberCount: number;
+  leadCount: number;
+  convertedLeadCount: number;
+  conversionRate: string;
+  quotationCount: number;
+  quotationValue: string;
+  salesOrderCount: number;
+  salesOrderValue: string;
+}
+
+export interface TeamPerformanceReportResponse {
+  dateFrom: string;
+  dateTo: string;
+  teams: TeamPerformanceRow[];
 }

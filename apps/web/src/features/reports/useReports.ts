@@ -6,6 +6,7 @@ import type {
   OutstandingReportQuery,
   PurchaseReportQuery,
   SalesReportQuery,
+  TeamPerformanceReportQuery,
 } from '@crm/types';
 import { reportsApi } from './api';
 
@@ -35,4 +36,11 @@ export function useBillingReport(query: BillingReportQuery) {
 
 export function useOutstandingReport(query: OutstandingReportQuery) {
   return useQuery({ queryKey: ['reports', 'outstanding', query], queryFn: () => reportsApi.getOutstandingReport(query) });
+}
+
+export function useTeamPerformanceReport(query: TeamPerformanceReportQuery) {
+  return useQuery({
+    queryKey: ['reports', 'team-performance', query],
+    queryFn: () => reportsApi.getTeamPerformanceReport(query),
+  });
 }

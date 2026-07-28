@@ -24,6 +24,10 @@ export class ListQuotationsQuery {
   @IsUUID()
   customerCompanyId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  teamId?: string;
+
   /** Matches against the quotation number. */
   @IsOptional()
   @IsString()

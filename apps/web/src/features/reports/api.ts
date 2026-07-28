@@ -12,6 +12,8 @@ import type {
   PurchaseReportResponse,
   SalesReportQuery,
   SalesReportResponse,
+  TeamPerformanceReportQuery,
+  TeamPerformanceReportResponse,
 } from '@crm/types';
 import { apiClient } from '@/lib/api/client';
 
@@ -70,4 +72,11 @@ export const reportsApi = {
   },
   exportOutstandingReport: (query: OutstandingReportQuery) =>
     downloadCsv('/reports/outstanding/export', query, 'outstanding-report.csv'),
+
+  async getTeamPerformanceReport(query: TeamPerformanceReportQuery): Promise<TeamPerformanceReportResponse> {
+    const { data } = await apiClient.get<TeamPerformanceReportResponse>('/reports/team-performance', { params: query });
+    return data;
+  },
+  exportTeamPerformanceReport: (query: TeamPerformanceReportQuery) =>
+    downloadCsv('/reports/team-performance/export', query, 'team-performance-report.csv'),
 };

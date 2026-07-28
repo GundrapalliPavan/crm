@@ -22,6 +22,7 @@ export interface ListLeadsParams {
   leadType?: LeadType;
   assignedTo?: string;
   sourceId?: string;
+  teamId?: string;
   unassigned?: boolean;
   overdueFollowUp?: boolean;
   search?: string;

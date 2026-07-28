@@ -10,9 +10,10 @@ products, categories, brands, units), Inventory (Module 3: warehouses, stock bal
 ledger, adjustments, transfers), Sales (Module 4: opportunities, quotations, sales orders),
 Purchase (Module 5: supplier profile, purchase orders, goods receipts), Billing (Module 6:
 customer profile, invoices, payments), Reports & Analytics (Module 7: role-aware dashboard,
-per-domain reports with CSV export) and Communication (Module 8: templates, communications log,
-Unified Communication Timeline slices on Lead/Company/Invoice) are implemented. Team Management does
-not exist yet. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the
+per-domain reports with CSV export), Communication (Module 8: templates, communications log,
+Unified Communication Timeline slices on Lead/Company/Invoice) and Team Management (Module 9:
+teams, membership, manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders,
+Team Performance report) are implemented. See [`PROJECT_SETUP.md`](PROJECT_SETUP.md) for the
 technical foundation specification and [`PROJECT.md`](PROJECT.md) for the product specification.
 
 ## Structure

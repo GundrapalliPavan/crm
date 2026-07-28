@@ -13,9 +13,9 @@ interface NavSection {
 
 /**
  * Primary navigation (UX.md sections 13-15). Only built modules are listed -
- * Team Management and Settings do not exist yet, and section 13 explicitly
- * warns against padding navigation out to look comprehensive before the
- * modules behind it exist.
+ * Settings does not exist yet, and section 13 explicitly warns against
+ * padding navigation out to look comprehensive before the modules behind it
+ * exist.
  */
 const HOME_ITEM: NavItem = { to: '/dashboard', label: 'Dashboard' };
 
@@ -76,6 +76,7 @@ const SECTIONS: NavSection[] = [
       { to: '/reports/purchases', label: 'Purchase' },
       { to: '/reports/billing', label: 'Billing' },
       { to: '/reports/outstanding', label: 'Outstanding' },
+      { to: '/reports/team-performance', label: 'Team Performance' },
     ],
   },
   {
@@ -84,6 +85,10 @@ const SECTIONS: NavSection[] = [
       { to: '/communications', label: 'History' },
       { to: '/communication-templates', label: 'Templates' },
     ],
+  },
+  {
+    label: 'Team',
+    items: [{ to: '/teams', label: 'Teams' }],
   },
 ];
 
