@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type {
   ApiCollectionResponse,
   AssignUserRolesRequest,
@@ -8,8 +8,11 @@ import type {
 } from '@crm/types';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
-import { NotFoundError, ValidationError } from '../../common/errors/app-error';
-import { PasswordService } from '../auth/services/password.service';
+import { AppConfigService } from '../../config/app-config.service';
+import { NodeEnv } from '../../config/env.validation';
+import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
+import { AccountEmailService } from '../auth/services/account-email.service';
+import { PasswordResetService } from '../auth/services/password-reset.service';
 import { PermissionsService } from '../auth/services/permissions.service';
 import { SessionService } from '../auth/services/session.service';
 import type { CreateUserDto } from './dto/create-user.dto';
@@ -22,12 +25,16 @@ import type { ListUsersQuery } from './dto/list-users.query';
  */
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly passwordService: PasswordService,
     private readonly permissionsService: PermissionsService,
     private readonly sessionService: SessionService,
     private readonly auditService: AuditService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly accountEmailService: AccountEmailService,
+    private readonly config: AppConfigService,
   ) {}
 
   async list(query: ListUsersQuery): Promise<ApiCollectionResponse<AuthenticatedUser>> {
@@ -66,23 +73,40 @@ export class UsersService {
   }
 
   /**
-   * Provisions a user with a securely generated temporary password
-   * (Step 4 section 39) rather than public self-registration
-   * (section 40 - not applicable to an internal distributor CRM).
+   * Provisions an invited user (Step 4 section 39: admin-gated, not public
+   * self-registration - section 40 is not applicable to an internal
+   * distributor CRM). The account is created `inactive` with no password;
+   * an invite email carries a verification link, and the account activates
+   * itself when the recipient completes `POST /auth/accept-invite`.
    */
   async create(dto: CreateUserDto, actorUserId: string): Promise<CreateUserResponse> {
-    const temporaryPassword = this.passwordService.generateTemporaryPassword();
-    const passwordHash = await this.passwordService.hash(temporaryPassword);
+    await this.assertEmailAndUsernameAvailable(dto.email, dto.username);
 
     const user = await this.prisma.user.create({
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
+        username: dto.username,
         email: dto.email.toLowerCase(),
         phone: dto.phone,
-        passwordHash,
+        status: 'inactive',
       },
     });
+
+    const rawToken = await this.passwordResetService.createToken(user.id, 'account_activation');
+    await this.accountEmailService.sendInviteEmail(user, rawToken);
+
+    if (this.config.nodeEnv !== NodeEnv.Production) {
+      // Logged only outside production, and only here, so an administrator
+      // can complete the flow locally without a real vendor account
+      // configured - the send above already degrades to an honest failure
+      // in that case (CLAUDE.md section 31), it just does not surface as an
+      // error here.
+      this.logger.log(
+        { userId: user.id, devOnlyInviteToken: rawToken },
+        'DEV ONLY: invite token (also emailed, if a provider is configured)',
+      );
+    }
 
     await this.auditService.record({
       actorUserId,
@@ -92,10 +116,22 @@ export class UsersService {
       afterData: { email: user.email, firstName: user.firstName, lastName: user.lastName },
     });
 
-    return {
-      user: await this.permissionsService.toAuthenticatedUser(user),
-      temporaryPassword,
-    };
+    return { user: await this.permissionsService.toAuthenticatedUser(user) };
+  }
+
+  private async assertEmailAndUsernameAvailable(email: string, username: string): Promise<void> {
+    const existing = await this.prisma.user.findFirst({
+      where: { OR: [{ email: email.toLowerCase() }, { username }] },
+      select: { email: true, username: true },
+    });
+
+    if (!existing) {
+      return;
+    }
+    if (existing.email === email.toLowerCase()) {
+      throw new ConflictError('A user with this email already exists.');
+    }
+    throw new ConflictError('This username is already taken.');
   }
 
   /**

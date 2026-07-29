@@ -53,7 +53,8 @@ src/
 
 ## Status
 
-Authentication (login, protected routes), Module 1 (CRM & Lead Management - Leads, Contacts,
+Authentication (login, protected routes, forgot-password/reset-password and accept-invite pages),
+Module 1 (CRM & Lead Management - Leads, Contacts,
 Companies, Follow-ups), Module 2 (Product Catalog - Products, Categories, Brands), Module 3
 (Inventory - Stock, Stock Movements, Warehouses, adjustments/transfers), Module 4 (Sales -
 Opportunities, Quotations, Sales Orders), Module 5 (Purchase - Supplier profile on the Company
@@ -63,7 +64,10 @@ plus Leads/Sales/Inventory/Purchase/Billing/Outstanding/Team Performance report 
 (Communication - Communications history, Templates management, a "Log Communication" action +
 timeline slice embedded on Lead/Company/Invoice detail pages), Module 9 (Team Management -
 Teams list/detail with membership management, a Team filter on Lead/Quotation/Sales Order lists,
-and a Team assignment control on Lead Detail), File Attachments (an "Attachments" section - upload,
+a Team assignment control on Lead Detail, and a Users page - create a user by sending an email
+invite (the account stays inactive until the recipient sets their own password), assign roles
+including the field-force Field Sales Executive/Telecaller roles, activate/deactivate), File
+Attachments (an "Attachments" section - upload,
 download, remove - embedded on every detail page: Lead, Contact, Company, Quotation, Sales Order,
 Purchase Order, Goods Receipt, Invoice, Payment, Product), In-App Notifications (a bell in the
 top bar - unread badge polled every 30s, a dropdown of recent notifications, mark-read on click with

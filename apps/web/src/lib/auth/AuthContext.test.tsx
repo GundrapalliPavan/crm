@@ -23,6 +23,7 @@ const sampleUser: AuthenticatedUser = {
   id: 'user-1',
   firstName: 'Ada',
   lastName: 'Lovelace',
+  username: null,
   email: 'ada@example.com',
   status: 'active',
   roles: [{ id: 'role-1', name: 'Administrator' }],

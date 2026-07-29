@@ -126,6 +126,7 @@ describe('LoginPage', () => {
           id: 'user-1',
           firstName: 'Ada',
           lastName: 'Lovelace',
+          username: null,
           email: 'ada@example.com',
           status: 'active',
           roles: [],

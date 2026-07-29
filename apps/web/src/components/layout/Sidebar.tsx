@@ -89,7 +89,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: 'Team',
-    items: [{ to: '/teams', label: 'Teams' }],
+    items: [
+      { to: '/teams', label: 'Teams' },
+      { to: '/users', label: 'Users' },
+    ],
   },
 ];
 

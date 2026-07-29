@@ -371,7 +371,7 @@ describe('Authentication, Users & RBAC (e2e)', () => {
       expect(JSON.stringify(usersResponse.body)).not.toContain('passwordHash');
     });
 
-    it('returns a generated temporary password on creation but never a stored hash', async () => {
+    it('creates an inactive, passwordless account and sends an invite rather than a temporary password', async () => {
       await createUser({
         email: 'creator@example.com',
         password: 'Str0ngPassphrase!',
@@ -382,11 +382,97 @@ describe('Authentication, Users & RBAC (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/users')
         .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
-        .send({ firstName: 'New', lastName: 'Hire', email: 'newhire@example.com' })
+        .send({ firstName: 'New', lastName: 'Hire', username: 'newhire', email: 'newhire@example.com' })
         .expect(201);
 
-      expect(response.body.temporaryPassword).toEqual(expect.any(String));
+      expect(response.body).not.toHaveProperty('temporaryPassword');
+      expect(response.body.user).toMatchObject({ status: 'inactive', username: 'newhire' });
       expect(JSON.stringify(response.body)).not.toContain('passwordHash');
+
+      const created = await testPrisma.user.findUniqueOrThrow({ where: { email: 'newhire@example.com' } });
+      expect(created.passwordHash).toBeNull();
+      expect(created.status).toBe('inactive');
+    });
+
+    it('rejects a duplicate email or username on creation', async () => {
+      await createUser({
+        email: 'creator2@example.com',
+        password: 'Str0ngPassphrase!',
+        roleName: 'Administrator',
+      });
+      const loginResponse = await login('creator2@example.com', 'Str0ngPassphrase!').expect(200);
+      const auth = { Authorization: `Bearer ${loginResponse.body.accessToken}` };
+
+      await request(app.getHttpServer())
+        .post('/api/v1/users')
+        .set(auth)
+        .send({ firstName: 'A', lastName: 'B', username: 'taken', email: 'taken@example.com' })
+        .expect(201);
+
+      const duplicateEmail = await request(app.getHttpServer())
+        .post('/api/v1/users')
+        .set(auth)
+        .send({ firstName: 'C', lastName: 'D', username: 'different', email: 'taken@example.com' })
+        .expect(409);
+      expect(duplicateEmail.body.error.code).toBe('DUPLICATE_RESOURCE');
+
+      const duplicateUsername = await request(app.getHttpServer())
+        .post('/api/v1/users')
+        .set(auth)
+        .send({ firstName: 'E', lastName: 'F', username: 'taken', email: 'different@example.com' })
+        .expect(409);
+      expect(duplicateUsername.body.error.code).toBe('DUPLICATE_RESOURCE');
+    });
+  });
+
+  describe('invite acceptance', () => {
+    async function createInvitedUser(email = 'invited@example.com') {
+      return testPrisma.user.create({
+        data: { firstName: 'Invited', lastName: 'User', username: `invited-${randomUUID().slice(0, 8)}`, email, status: 'inactive' },
+      });
+    }
+
+    it('activates the account and lets the new password log in', async () => {
+      const user = await createInvitedUser();
+      const rawToken = await passwordResetService.createToken(user.id, 'account_activation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/accept-invite')
+        .send({ token: rawToken, password: 'NewPassphrase2' })
+        .expect(204);
+
+      const activated = await testPrisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(activated.status).toBe('active');
+      expect(activated.emailVerifiedAt).not.toBeNull();
+
+      await login('invited@example.com', 'NewPassphrase2').expect(200);
+    });
+
+    it('rejects an invalid or expired invite token', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/accept-invite')
+        .send({ token: 'not-a-real-token', password: 'NewPassphrase2' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects a password-reset token at accept-invite, and an invite token at reset-password', async () => {
+      const activeUser = await createUser({ email: 'active-user@example.com', password: 'OldPassphrase1' });
+      const resetToken = await passwordResetService.createToken(activeUser.id, 'password_reset');
+
+      const invitedUser = await createInvitedUser('invited2@example.com');
+      const inviteToken = await passwordResetService.createToken(invitedUser.id, 'account_activation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/accept-invite')
+        .send({ token: resetToken, password: 'NewPassphrase2' })
+        .expect(422);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/reset-password')
+        .send({ token: inviteToken, newPassword: 'NewPassphrase2' })
+        .expect(422);
     });
   });
 

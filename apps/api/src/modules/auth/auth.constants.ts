@@ -16,8 +16,6 @@ export const PASSWORD_POLICY_MESSAGE =
   `Password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters ` +
   'and include at least one letter and one number.';
 
-/** Length of admin-generated temporary passwords (section 39). Comfortably above the minimum. */
-export const TEMPORARY_PASSWORD_LENGTH = 16;
 
 /** Password-reset token lifetime (section 44: "finite lifetime"). */
 export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;

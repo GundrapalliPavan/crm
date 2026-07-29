@@ -66,6 +66,7 @@ export class PermissionsService {
       id: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
+      username: user.username,
       email: user.email,
       status: user.status,
       roles,

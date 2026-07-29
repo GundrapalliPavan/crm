@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from '../../../common/errors/app-error';
 import { AuditService } from '../../../common/audit/audit.service';
+import { AccountEmailService } from './account-email.service';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordService } from './password.service';
 import { PermissionsService } from './permissions.service';
@@ -37,6 +38,7 @@ export class AuthService {
     private readonly sessionService: SessionService,
     private readonly tokenService: TokenService,
     private readonly auditService: AuditService,
+    private readonly accountEmailService: AccountEmailService,
   ) {}
 
   /**
@@ -160,22 +162,23 @@ export class AuthService {
       return;
     }
 
-    const rawToken = await this.passwordResetService.createToken(user.id);
+    const rawToken = await this.passwordResetService.createToken(user.id, 'password_reset');
+    await this.accountEmailService.sendPasswordResetEmail(user, rawToken);
 
     if (this.config.nodeEnv !== NodeEnv.Production) {
-      // No email/SMS provider is configured yet (Phase 0 scope) - this is the
-      // documented, deliberate limitation (Step 4 section 42). Logged only
-      // outside production, and only here, so a developer can complete the
-      // flow locally without a real delivery integration.
+      // Logged only outside production, and only here, so a developer can
+      // complete the flow locally without a real vendor account configured -
+      // the send above already degrades to an honest failure in that case
+      // (CLAUDE.md section 31), it just does not surface as an error here.
       this.logger.log(
         { userId: user.id, devOnlyResetToken: rawToken },
-        'DEV ONLY: password reset token (no delivery provider configured)',
+        'DEV ONLY: password reset token (also emailed, if a provider is configured)',
       );
     }
   }
 
   async resetPassword(rawToken: string, newPassword: string): Promise<void> {
-    const validation = await this.passwordResetService.validateToken(rawToken);
+    const validation = await this.passwordResetService.validateToken(rawToken, 'password_reset');
 
     if (validation.status !== 'valid') {
       throw new ValidationError({ token: ['This reset link is invalid or has expired.'] });
@@ -197,6 +200,38 @@ export class AuthService {
     await this.auditService.record({
       actorUserId: validation.token.userId,
       action: 'user.password_reset',
+      entityType: 'user',
+      entityId: validation.token.userId,
+    });
+  }
+
+  /**
+   * Completes an admin-initiated invite: the invited account exists already
+   * (created `inactive` with no password by `UsersService.create`) - this
+   * just proves the recipient controls the invited email address and lets
+   * them choose their own password, rather than the admin handing one out
+   * (CLAUDE.md section 68's "external provider choice" reasoning applies
+   * equally to "who picks the password").
+   */
+  async acceptInvite(rawToken: string, newPassword: string): Promise<void> {
+    const validation = await this.passwordResetService.validateToken(rawToken, 'account_activation');
+
+    if (validation.status !== 'valid') {
+      throw new ValidationError({ token: ['This invitation link is invalid or has expired.'] });
+    }
+
+    const passwordHash = await this.passwordService.hash(newPassword);
+
+    await this.prisma.user.update({
+      where: { id: validation.token.userId },
+      data: { passwordHash, status: 'active', emailVerifiedAt: new Date() },
+    });
+
+    await this.passwordResetService.consumeToken(validation.token.id);
+
+    await this.auditService.record({
+      actorUserId: validation.token.userId,
+      action: 'user.invite_accepted',
       entityType: 'user',
       entityId: validation.token.userId,
     });

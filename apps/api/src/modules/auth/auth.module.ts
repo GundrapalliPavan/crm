@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { MessagingModule } from '../../infrastructure/messaging/messaging.module';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { AccountEmailService } from './services/account-email.service';
 import { AuthService } from './services/auth.service';
 import { PasswordResetService } from './services/password-reset.service';
 import { PasswordService } from './services/password.service';
@@ -23,7 +25,7 @@ import { TokenService } from './services/token.service';
  * "every route is protected by default" a decision visible in one place.
  */
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), MessagingModule],
   controllers: [AuthController],
   providers: [
     AuthService,
@@ -32,6 +34,7 @@ import { TokenService } from './services/token.service';
     PermissionsService,
     SessionService,
     TokenService,
+    AccountEmailService,
     JwtAuthGuard,
     PermissionsGuard,
   ],

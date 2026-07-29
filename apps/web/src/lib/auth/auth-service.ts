@@ -1,4 +1,12 @@
-import type { AuthenticatedUser, LoginRequest, LoginResponse, RefreshResponse } from '@crm/types';
+import type {
+  AcceptInviteRequest,
+  AuthenticatedUser,
+  ForgotPasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  RefreshResponse,
+  ResetPasswordRequest,
+} from '@crm/types';
 import { apiClient } from '@/lib/api/client';
 import { setAccessToken } from './token-store';
 
@@ -32,5 +40,17 @@ export const authService = {
     } finally {
       setAccessToken(null);
     }
+  },
+
+  async forgotPassword(request: ForgotPasswordRequest): Promise<void> {
+    await apiClient.post('/auth/forgot-password', request);
+  },
+
+  async resetPassword(request: ResetPasswordRequest): Promise<void> {
+    await apiClient.post('/auth/reset-password', request);
+  },
+
+  async acceptInvite(request: AcceptInviteRequest): Promise<void> {
+    await apiClient.post('/auth/accept-invite', request);
   },
 };

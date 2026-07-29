@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
+import { AcceptInvitePage } from '@/features/auth/AcceptInvitePage';
+import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
 import { BrandsPage } from '@/features/brands/BrandsPage';
 import { CompanyDetailPage } from '@/features/companies/CompanyDetailPage';
 import { CompanyListPage } from '@/features/companies/CompanyListPage';
@@ -46,6 +49,7 @@ import { SalesOrderListPage } from '@/features/sales-orders/SalesOrderListPage';
 import { TeamPerformanceReportPage } from '@/features/reports/TeamPerformanceReportPage';
 import { TeamDetailPage } from '@/features/teams/TeamDetailPage';
 import { TeamListPage } from '@/features/teams/TeamListPage';
+import { UsersPage } from '@/features/users/UsersPage';
 import { WarehousesPage } from '@/features/warehouses/WarehousesPage';
 
 /**
@@ -60,6 +64,9 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -114,6 +121,7 @@ export function AppRouter() {
         <Route path="/communication-templates" element={<CommunicationTemplateListPage />} />
         <Route path="/teams" element={<TeamListPage />} />
         <Route path="/teams/:teamId" element={<TeamDetailPage />} />
+        <Route path="/users" element={<UsersPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
