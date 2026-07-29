@@ -77,6 +77,13 @@ describe('Addresses (e2e)', () => {
     return { user, token, auth: () => ({ Authorization: `Bearer ${token}` }) };
   }
 
+  /** An authenticated actor holding no role at all, for permission-denial checks unrelated to any specific role. */
+  async function noPermissionsRequest() {
+    const user = await createUser();
+    const token = await accessTokenFor(user.email);
+    return { auth: () => ({ Authorization: `Bearer ${token}` }) };
+  }
+
   function createCompany() {
     return testPrisma.company.create({ data: { name: `Company-${randomUUID().slice(0, 8)}` } });
   }
@@ -267,7 +274,7 @@ describe('Addresses (e2e)', () => {
     });
 
     it('denies address management without address.manage', async () => {
-      const { auth } = await authedRequest('Sales Executive');
+      const { auth } = await noPermissionsRequest();
       const company = await createCompany();
       const response = await request(app.getHttpServer())
         .post('/api/v1/addresses')
@@ -396,7 +403,7 @@ describe('Addresses (e2e)', () => {
         .send(addressPayload({ companyId: company.id }))
         .expect(201);
 
-      const { auth } = await authedRequest('Sales Executive');
+      const { auth } = await noPermissionsRequest();
       const response = await request(app.getHttpServer())
         .delete(`/api/v1/addresses/${created.body.id}`)
         .set(auth())
