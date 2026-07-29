@@ -144,6 +144,13 @@ export class LeadsService {
     });
 
     await this.recordActivity(lead.id, 'created', 'Lead created', actorUserId);
+    await this.auditService.record({
+      actorUserId,
+      action: 'lead.created',
+      entityType: 'lead',
+      entityId: lead.id,
+      afterData: { firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone },
+    });
     if (dto.assignedTo) {
       await this.recordActivity(lead.id, 'assigned', 'Lead assigned', actorUserId, {
         assignedTo: dto.assignedTo,
@@ -158,7 +165,7 @@ export class LeadsService {
     return toLead(lead);
   }
 
-  async update(id: string, dto: UpdateLeadDto): Promise<Lead> {
+  async update(id: string, dto: UpdateLeadDto, actorUserId: string): Promise<Lead> {
     const existing = await this.prisma.lead.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Lead not found.');
@@ -173,6 +180,15 @@ export class LeadsService {
         nextFollowUpAt: dto.nextFollowUpAt !== undefined ? new Date(dto.nextFollowUpAt) : undefined,
       },
       include: LEAD_INCLUDE,
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'lead.updated',
+      entityType: 'lead',
+      entityId: id,
+      beforeData: { priority: existing.priority, estimatedValue: existing.estimatedValue?.toString() ?? null },
+      afterData: { priority: lead.priority, estimatedValue: lead.estimatedValue?.toString() ?? null },
     });
 
     return toLead(lead);
@@ -216,6 +232,14 @@ export class LeadsService {
       previousAssignee: existing.assignedTo,
       newAssignee: dto.userId ?? null,
       newTeam: dto.teamId ?? null,
+    });
+    await this.auditService.record({
+      actorUserId,
+      action: 'lead.assigned',
+      entityType: 'lead',
+      entityId: id,
+      beforeData: { assignedTo: existing.assignedTo, assignedTeamId: existing.assignedTeamId },
+      afterData: { assignedTo: dto.userId ?? null, assignedTeamId: dto.teamId ?? null },
     });
     if (dto.userId && dto.userId !== existing.assignedTo) {
       await emitDomainEvent(this.events, DOMAIN_EVENTS.leadAssigned, {

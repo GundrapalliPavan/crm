@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
-import type { Address } from '@crm/types';
+import type { Address, AuthenticatedUser } from '@crm/types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -18,19 +19,23 @@ export class AddressesController {
 
   @RequirePermission('address.manage')
   @Post()
-  create(@Body() dto: CreateAddressDto): Promise<Address> {
-    return this.addressesService.create(dto);
+  create(@Body() dto: CreateAddressDto, @CurrentUser() actor: AuthenticatedUser): Promise<Address> {
+    return this.addressesService.create(dto, actor.id);
   }
 
   @RequirePermission('address.manage')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAddressDto): Promise<Address> {
-    return this.addressesService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAddressDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Address> {
+    return this.addressesService.update(id, dto, actor.id);
   }
 
   @RequirePermission('address.manage')
   @Delete(':id')
-  delete(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.addressesService.delete(id);
+  delete(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
+    return this.addressesService.delete(id, actor.id);
   }
 }

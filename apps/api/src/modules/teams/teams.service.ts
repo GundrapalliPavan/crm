@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Team, TeamMember } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
@@ -17,7 +18,10 @@ import {
 
 @Injectable()
 export class TeamsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListTeamsQuery): Promise<ApiCollectionResponse<Team>> {
     const where: Prisma.TeamWhereInput = {};
@@ -52,7 +56,7 @@ export class TeamsService {
     return toTeam(team, memberCountByTeam.get(team.id) ?? 0);
   }
 
-  async create(dto: CreateTeamDto): Promise<Team> {
+  async create(dto: CreateTeamDto, actorUserId: string): Promise<Team> {
     await this.assertNoDuplicateName(dto.name);
     if (dto.managerId) {
       await this.assertUserExists(dto.managerId);
@@ -62,11 +66,20 @@ export class TeamsService {
       data: { name: dto.name, description: dto.description, managerId: dto.managerId },
       include: TEAM_INCLUDE,
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'team.created',
+      entityType: 'team',
+      entityId: team.id,
+      afterData: { name: team.name, managerId: team.managerId },
+    });
+
     return toTeam(team, 0);
   }
 
-  async update(id: string, dto: UpdateTeamDto): Promise<Team> {
-    await this.findTeamOrThrow(id);
+  async update(id: string, dto: UpdateTeamDto, actorUserId: string): Promise<Team> {
+    const existing = await this.findTeamOrThrow(id);
     if (dto.name) {
       await this.assertNoDuplicateName(dto.name, id);
     }
@@ -79,6 +92,17 @@ export class TeamsService {
       data: dto,
       include: TEAM_INCLUDE,
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'team.updated',
+      entityType: 'team',
+      entityId: id,
+      // Manager reassignment is the field most worth a before/after trail here.
+      beforeData: { name: existing.name, managerId: existing.managerId },
+      afterData: { name: team.name, managerId: team.managerId },
+    });
+
     const memberCountByTeam = await this.memberCountsFor([id]);
     return toTeam(team, memberCountByTeam.get(id) ?? 0);
   }
@@ -93,7 +117,7 @@ export class TeamsService {
     return { data: members.map(toTeamMember) };
   }
 
-  async addMember(teamId: string, dto: AddTeamMemberDto): Promise<TeamMember> {
+  async addMember(teamId: string, dto: AddTeamMemberDto, actorUserId: string): Promise<TeamMember> {
     await this.findTeamOrThrow(teamId);
     await this.assertUserExists(dto.userId);
 
@@ -114,10 +138,19 @@ export class TeamsService {
           data: { teamId, userId: dto.userId, membershipRole: dto.membershipRole },
           include: TEAM_MEMBER_INCLUDE,
         });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'team_member.added',
+      entityType: 'team',
+      entityId: teamId,
+      metadata: { userId: dto.userId, membershipRole: dto.membershipRole },
+    });
+
     return toTeamMember(member);
   }
 
-  async removeMember(teamId: string, userId: string): Promise<void> {
+  async removeMember(teamId: string, userId: string, actorUserId: string): Promise<void> {
     await this.findTeamOrThrow(teamId);
     const existing = await this.prisma.teamMember.findUnique({
       where: { teamId_userId: { teamId, userId } },
@@ -129,6 +162,14 @@ export class TeamsService {
     await this.prisma.teamMember.update({
       where: { id: existing.id },
       data: { isActive: false },
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'team_member.removed',
+      entityType: 'team',
+      entityId: teamId,
+      metadata: { userId },
     });
   }
 

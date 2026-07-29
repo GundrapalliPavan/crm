@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import type { Warehouse } from '@crm/types';
+import type { AuthenticatedUser, Warehouse } from '@crm/types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
@@ -24,13 +25,17 @@ export class WarehousesController {
 
   @RequirePermission('warehouse.manage')
   @Post()
-  create(@Body() dto: CreateWarehouseDto): Promise<Warehouse> {
-    return this.warehousesService.create(dto);
+  create(@Body() dto: CreateWarehouseDto, @CurrentUser() actor: AuthenticatedUser): Promise<Warehouse> {
+    return this.warehousesService.create(dto, actor.id);
   }
 
   @RequirePermission('warehouse.manage')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateWarehouseDto): Promise<Warehouse> {
-    return this.warehousesService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateWarehouseDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Warehouse> {
+    return this.warehousesService.update(id, dto, actor.id);
   }
 }

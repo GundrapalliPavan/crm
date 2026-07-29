@@ -38,6 +38,9 @@ export function createRequestContextMiddleware(requestContext: RequestContextSer
     req.headers[REQUEST_ID_HEADER] = requestId;
     res.setHeader(REQUEST_ID_HEADER, requestId);
 
-    requestContext.run({ requestId }, () => next());
+    requestContext.run(
+      { requestId, ipAddress: req.ip, userAgent: req.header('user-agent') },
+      () => next(),
+    );
   };
 }

@@ -38,7 +38,8 @@ export class CommunicationTemplatesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCommunicationTemplateDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<CommunicationTemplate> {
-    return this.communicationTemplatesService.update(id, dto);
+    return this.communicationTemplatesService.update(id, dto, actor.id);
   }
 }

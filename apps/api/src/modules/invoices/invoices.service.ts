@@ -215,7 +215,7 @@ export class InvoicesService {
     return { invoice: toInvoice(invoice), creditWarning };
   }
 
-  async update(id: string, dto: UpdateInvoiceDto): Promise<Invoice> {
+  async update(id: string, dto: UpdateInvoiceDto, actorUserId: string): Promise<Invoice> {
     const existing = await this.getDetailOrThrow(id);
     if (existing.status !== 'draft') {
       throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a draft invoice can be edited.');
@@ -231,6 +231,16 @@ export class InvoicesService {
       },
       include: INVOICE_DETAIL_INCLUDE,
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'invoice.updated',
+      entityType: 'invoice',
+      entityId: id,
+      beforeData: { dueDate: existing.dueDate?.toISOString() ?? null },
+      afterData: { dueDate: invoice.dueDate?.toISOString() ?? null },
+    });
+
     return toInvoice(invoice);
   }
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Company, Contact } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { normalizePhone } from '../../common/utils/normalize';
 import { PrismaService } from '../../database/prisma.service';
@@ -12,7 +13,10 @@ import { COMPANY_INCLUDE, toCompany } from './company.mapper';
 
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListCompaniesQuery): Promise<ApiCollectionResponse<Company>> {
     const where: Prisma.CompanyWhereInput = { archivedAt: null };
@@ -114,10 +118,18 @@ export class CompaniesService {
       include: COMPANY_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'company.created',
+      entityType: 'company',
+      entityId: company.id,
+      afterData: { name: company.name, companyType: company.companyType },
+    });
+
     return toCompany(company);
   }
 
-  async update(id: string, dto: UpdateCompanyDto): Promise<Company> {
+  async update(id: string, dto: UpdateCompanyDto, actorUserId: string): Promise<Company> {
     const existing = await this.prisma.company.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Company not found.');
@@ -132,11 +144,27 @@ export class CompaniesService {
       include: COMPANY_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'company.updated',
+      entityType: 'company',
+      entityId: id,
+      // Credit terms are the field most worth a before/after trail here (PROJECT.md section 48).
+      beforeData: {
+        creditLimit: existing.creditLimit?.toString() ?? null,
+        paymentTermsDays: existing.paymentTermsDays,
+      },
+      afterData: {
+        creditLimit: company.creditLimit?.toString() ?? null,
+        paymentTermsDays: company.paymentTermsDays,
+      },
+    });
+
     return toCompany(company);
   }
 
   /** DELETE means archive - contacts/orders/invoices may still reference this company. */
-  async archive(id: string): Promise<void> {
+  async archive(id: string, actorUserId: string): Promise<void> {
     const existing = await this.prisma.company.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Company not found.');
@@ -146,6 +174,12 @@ export class CompaniesService {
     }
 
     await this.prisma.company.update({ where: { id }, data: { archivedAt: new Date() } });
+    await this.auditService.record({
+      actorUserId,
+      action: 'company.archived',
+      entityType: 'company',
+      entityId: id,
+    });
   }
 
   private async assertNoDuplicate(

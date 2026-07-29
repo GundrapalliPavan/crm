@@ -56,14 +56,18 @@ export class CompaniesController {
 
   @RequirePermission('company.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCompanyDto): Promise<Company> {
-    return this.companiesService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCompanyDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Company> {
+    return this.companiesService.update(id, dto, actor.id);
   }
 
   @RequirePermission('company.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Delete(':id')
-  archive(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.companiesService.archive(id);
+  archive(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
+    return this.companiesService.archive(id, actor.id);
   }
 }

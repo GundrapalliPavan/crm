@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { Address } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -22,7 +23,10 @@ function blankToNull(value?: string): string | null {
 
 @Injectable()
 export class AddressesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListAddressesQuery): Promise<{ data: Address[] }> {
     const owner = this.ownerFromIds(query);
@@ -33,7 +37,7 @@ export class AddressesService {
     return { data: addresses.map(toAddress) };
   }
 
-  async create(dto: CreateAddressDto): Promise<Address> {
+  async create(dto: CreateAddressDto, actorUserId: string): Promise<Address> {
     const owner = this.ownerFromIds(dto);
     await this.assertOwnerExists(owner);
 
@@ -61,10 +65,19 @@ export class AddressesService {
         },
       });
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'address.created',
+      entityType: 'address',
+      entityId: address.id,
+      afterData: { ...owner, addressType: address.addressType, line1: address.line1, city: address.city },
+    });
+
     return toAddress(address);
   }
 
-  async update(id: string, dto: UpdateAddressDto): Promise<Address> {
+  async update(id: string, dto: UpdateAddressDto, actorUserId: string): Promise<Address> {
     const existing = await this.prisma.address.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Address not found.');
@@ -99,15 +112,40 @@ export class AddressesService {
         },
       });
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'address.updated',
+      entityType: 'address',
+      entityId: id,
+      beforeData: { line1: existing.line1, city: existing.city, postalCode: existing.postalCode },
+      afterData: { line1: address.line1, city: address.city, postalCode: address.postalCode },
+    });
+
     return toAddress(address);
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, actorUserId: string): Promise<void> {
     const existing = await this.prisma.address.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Address not found.');
     }
     await this.prisma.address.delete({ where: { id } });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'address.deleted',
+      entityType: 'address',
+      entityId: id,
+      beforeData: {
+        companyId: existing.companyId,
+        contactId: existing.contactId,
+        warehouseId: existing.warehouseId,
+        addressType: existing.addressType,
+        line1: existing.line1,
+        city: existing.city,
+      },
+    });
   }
 
   /** DATABASE.md section 36: an address belongs to exactly one owner - mirrors the database CHECK constraint at the application layer, with a friendly error instead of a raw constraint violation. */

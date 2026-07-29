@@ -17,9 +17,11 @@ export interface AuditEntry {
  * Writes administrative/security history (DATABASE.md section 99).
  *
  * Deliberately append-only: there is no update or delete method, matching the
- * evidentiary nature of an audit record (section 101). The request ID is
- * attached automatically so an audited change can be traced back to the exact
- * API call that caused it (Step 4 section 50).
+ * evidentiary nature of an audit record (section 101). The request ID,
+ * caller IP and user agent are attached automatically from the ambient
+ * request context, so an audited change can be traced back to the exact API
+ * call that caused it (Step 4 section 50) without every call site having to
+ * thread them through.
  */
 @Injectable()
 export class AuditService {
@@ -39,6 +41,8 @@ export class AuditService {
         afterData: entry.afterData,
         metadata: entry.metadata,
         requestId: this.requestContext.requestId,
+        ipAddress: this.requestContext.ipAddress,
+        userAgent: this.requestContext.userAgent,
       },
     });
   }

@@ -104,10 +104,18 @@ export class PurchaseOrdersService {
       });
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'purchase_order.created',
+      entityType: 'purchase_order',
+      entityId: order.id,
+      afterData: { poNumber: order.poNumber, totalAmount: order.totalAmount.toString() },
+    });
+
     return toPurchaseOrder(order);
   }
 
-  async update(id: string, dto: UpdatePurchaseOrderDto): Promise<PurchaseOrder> {
+  async update(id: string, dto: UpdatePurchaseOrderDto, actorUserId: string): Promise<PurchaseOrder> {
     const existing = await this.getDetailOrThrow(id);
     if (existing.status !== 'draft') {
       throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a draft purchase order can be edited.');
@@ -152,6 +160,15 @@ export class PurchaseOrdersService {
         },
         include: PURCHASE_ORDER_DETAIL_INCLUDE,
       });
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'purchase_order.updated',
+      entityType: 'purchase_order',
+      entityId: id,
+      beforeData: { totalAmount: existing.totalAmount.toString() },
+      afterData: { totalAmount: order.totalAmount.toString() },
     });
 
     return toPurchaseOrder(order);

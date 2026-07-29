@@ -92,6 +92,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/teams', label: 'Teams' },
       { to: '/users', label: 'Users' },
+      { to: '/audit-log', label: 'Audit Log' },
     ],
   },
 ];

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Contact } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { normalizeEmail, normalizePhone } from '../../common/utils/normalize';
 import { PrismaService } from '../../database/prisma.service';
@@ -11,7 +12,10 @@ import { CONTACT_INCLUDE, toContact } from './contact.mapper';
 
 @Injectable()
 export class ContactsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListContactsQuery): Promise<ApiCollectionResponse<Contact>> {
     const where: Prisma.ContactWhereInput = { archivedAt: null };
@@ -83,10 +87,18 @@ export class ContactsService {
       include: CONTACT_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'contact.created',
+      entityType: 'contact',
+      entityId: contact.id,
+      afterData: { firstName: contact.firstName, lastName: contact.lastName, companyId: contact.companyId },
+    });
+
     return toContact(contact);
   }
 
-  async update(id: string, dto: UpdateContactDto): Promise<Contact> {
+  async update(id: string, dto: UpdateContactDto, actorUserId: string): Promise<Contact> {
     const existing = await this.prisma.contact.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Contact not found.');
@@ -102,11 +114,18 @@ export class ContactsService {
       include: CONTACT_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'contact.updated',
+      entityType: 'contact',
+      entityId: id,
+    });
+
     return toContact(contact);
   }
 
   /** DELETE means archive - a company/lead may still reference this contact historically. */
-  async archive(id: string): Promise<void> {
+  async archive(id: string, actorUserId: string): Promise<void> {
     const existing = await this.prisma.contact.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Contact not found.');
@@ -116,6 +135,12 @@ export class ContactsService {
     }
 
     await this.prisma.contact.update({ where: { id }, data: { archivedAt: new Date() } });
+    await this.auditService.record({
+      actorUserId,
+      action: 'contact.archived',
+      entityType: 'contact',
+      entityId: id,
+    });
   }
 
   private async assertNoDuplicate(

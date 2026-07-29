@@ -55,8 +55,12 @@ export class LeadsController {
 
   @RequirePermission('lead.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateLeadDto): Promise<Lead> {
-    return this.leadsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Lead> {
+    return this.leadsService.update(id, dto, actor.id);
   }
 
   @RequirePermission('lead.delete')

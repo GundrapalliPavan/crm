@@ -106,10 +106,18 @@ export class SalesOrdersService {
       });
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'sales_order.created',
+      entityType: 'sales_order',
+      entityId: order.id,
+      afterData: { salesOrderNumber: order.salesOrderNumber, totalAmount: order.totalAmount.toString() },
+    });
+
     return toSalesOrder(order);
   }
 
-  async update(id: string, dto: UpdateSalesOrderDto): Promise<SalesOrder> {
+  async update(id: string, dto: UpdateSalesOrderDto, actorUserId: string): Promise<SalesOrder> {
     const existing = await this.getDetailOrThrow(id);
     if (existing.status !== 'draft') {
       throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a draft sales order can be edited.');
@@ -147,6 +155,15 @@ export class SalesOrdersService {
         },
         include: SALES_ORDER_DETAIL_INCLUDE,
       });
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'sales_order.updated',
+      entityType: 'sales_order',
+      entityId: id,
+      beforeData: { totalAmount: existing.totalAmount.toString() },
+      afterData: { totalAmount: order.totalAmount.toString() },
     });
 
     return toSalesOrder(order);

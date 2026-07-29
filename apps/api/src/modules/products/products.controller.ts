@@ -47,14 +47,18 @@ export class ProductsController {
 
   @RequirePermission('product.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProductDto): Promise<Product> {
-    return this.productsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProductDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Product> {
+    return this.productsService.update(id, dto, actor.id);
   }
 
   @RequirePermission('product.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Delete(':id')
-  archive(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.productsService.archive(id);
+  archive(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
+    return this.productsService.archive(id, actor.id);
   }
 }

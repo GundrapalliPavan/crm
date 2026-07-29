@@ -619,6 +619,41 @@ Notable behaviour:
   pass - it touches four already-shipped financial services and deserves its own reviewed pass
   (CLAUDE.md section 75), rather than being bundled into a focused platform-capability change.
 
+## Audit
+
+A system-level trail of every create/edit/delete operation across the CRM (DATABASE.md sections
+99-102, ARCHITECTURE.md sections 60-61, PROJECT.md section 48) - who did it, when, and what changed.
+`AuditService.record()` and the `audit_logs` table have existed since Step 4; this pass closes two
+gaps: most modules never actually called it, and there was no way to read the history back.
+
+Notable behaviour:
+
+- **`GET /audit-logs` (`audit.read`, Administrator-only by default)** is the first read surface over
+  `audit_logs` - filterable by `entityType`, `entityId`, `actorUserId`, `action`, and a
+  `dateFrom`/`dateTo` range, paginated like every other list endpoint. No update or delete route
+  exists here either, matching DATABASE.md section 101's immutability requirement - a viewer that
+  could edit the trail would not be much of a trail.
+- **Coverage was extended to every write-capable module that previously had none**: Products,
+  Categories, Brands, Warehouses, Inventory adjustments/transfers, Companies, Contacts, Follow-ups,
+  Customer/Supplier profiles, Addresses, Files, Communication Templates, and Teams (including
+  membership and manager assignment) all now call `AuditService.record()` on create/update/delete.
+  Several already-audited modules (Leads, Quotations, Sales Orders, Purchase Orders, Invoices) had
+  audit calls for lifecycle transitions (approve/cancel/convert) but not for the plain `create()`/
+  `update()` that most users actually do most often - those gaps are filled too.
+- **`ipAddress`/`userAgent` are captured automatically**, not per-call-site - `RequestContext` (the
+  same `AsyncLocalStorage` that already carried the request ID) now also carries the caller's IP and
+  user agent from the request-context middleware, and `AuditService.record()` reads them from there.
+  These columns existed in the schema from the start but were unused until now.
+- **Deliberately excluded**: Communications (message *sending*) is not audited here - it already has
+  its own per-record log (the `communications` table / Unified Communication Timeline), and
+  DATABASE.md section 102 is explicit that Activity and Audit are different tables for different
+  purposes. Communication Templates (the settings/configuration side) *is* audited.
+- **`beforeData`/`afterData` snapshots are deliberately lean** for low-stakes master data (a Brand's
+  name, say) but capture real before/after values for financially or security-relevant fields -
+  pricing on Products, credit terms on Company/Customer Profile, manager reassignment on Teams -
+  following PROJECT.md section 48's own examples (Price Changes, Discount Approval) rather than
+  logging every field on every entity.
+
 ## Scripts
 
 | Command | Description |
@@ -657,7 +692,10 @@ files, download returning the original bytes/filename/content-type, and permissi
 notifications workflow (each of the five trigger events firing for the right recipient(s) via a real
 action - lead assignment, quotation/purchase-order submission, payment recording, a stock adjustment
 crossing the low-stock threshold - plus the "no notification when nothing should fire" cases,
-per-user scoping, unread count, mark-read, and mark-all-read) - all with real HTTP requests, not
+per-user scoping, unread count, mark-read, and mark-all-read), and the audit workflow (an ordinary
+create/update elsewhere in the app producing the right who/when/what entry, list filtering by
+entity/actor/action/date range, pagination, the `audit.read` permission gate, and no route existing
+to modify or delete an entry) - all with real HTTP requests, not
 mocked Prisma, and real bytes on disk (redirected to a dedicated `uploads-test` directory - see
 `test/database/point-app-at-test-db.ts`). Every test gets its own application instance so the login
 endpoint's rate limit cannot leak between tests. Like `test:db`, it refuses to run unless
@@ -675,7 +713,9 @@ Lead/Company/Invoice), Module 9 (Team Management - Teams & Reporting Structure: 
 manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders), File Attachments (a
 platform capability: upload/list/download/delete, attachable to any of ten entity types), In-App
 Notifications (a platform capability: five domain-event-driven triggers, personal-scope
-list/unread-count/mark-read) and Account Onboarding & Password Recovery (admin-gated invite-based
-account activation and emailed password reset, replacing the original temporary-password flow)
-complete, backend and frontend. See `PROJECT_SETUP.md` section 67 for the Phase 0 implementation
-order and this repo's own module roadmap for the planned build order after Phase 0.
+list/unread-count/mark-read), Account Onboarding & Password Recovery (admin-gated invite-based
+account activation and emailed password reset, replacing the original temporary-password flow), and
+Audit (a system-level, Administrator-only trail of create/edit/delete operations across every
+module, with a filterable/paginated read API) complete, backend and frontend. See
+`PROJECT_SETUP.md` section 67 for the Phase 0 implementation order and this repo's own module
+roadmap for the planned build order after Phase 0.

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Warehouse } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
@@ -8,7 +9,10 @@ import { WAREHOUSE_INCLUDE, toWarehouse } from './warehouse.mapper';
 
 @Injectable()
 export class WarehousesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(): Promise<{ data: Warehouse[] }> {
     const warehouses = await this.prisma.warehouse.findMany({
@@ -29,7 +33,7 @@ export class WarehousesService {
     return toWarehouse(warehouse);
   }
 
-  async create(dto: CreateWarehouseDto): Promise<Warehouse> {
+  async create(dto: CreateWarehouseDto, actorUserId: string): Promise<Warehouse> {
     await this.assertNoDuplicateCode(dto.code);
     if (dto.managerId) {
       await this.assertManagerExists(dto.managerId);
@@ -39,10 +43,19 @@ export class WarehousesService {
       data: { code: dto.code, name: dto.name, managerId: dto.managerId },
       include: WAREHOUSE_INCLUDE,
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'warehouse.created',
+      entityType: 'warehouse',
+      entityId: warehouse.id,
+      afterData: { code: warehouse.code, name: warehouse.name },
+    });
+
     return toWarehouse(warehouse);
   }
 
-  async update(id: string, dto: UpdateWarehouseDto): Promise<Warehouse> {
+  async update(id: string, dto: UpdateWarehouseDto, actorUserId: string): Promise<Warehouse> {
     const existing = await this.prisma.warehouse.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Warehouse not found.');
@@ -56,6 +69,16 @@ export class WarehousesService {
       data: dto,
       include: WAREHOUSE_INCLUDE,
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'warehouse.updated',
+      entityType: 'warehouse',
+      entityId: id,
+      beforeData: { name: existing.name, managerId: existing.managerId, isActive: existing.isActive },
+      afterData: { name: warehouse.name, managerId: warehouse.managerId, isActive: warehouse.isActive },
+    });
+
     return toWarehouse(warehouse);
   }
 

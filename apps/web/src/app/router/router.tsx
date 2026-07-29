@@ -4,6 +4,7 @@ import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { AcceptInvitePage } from '@/features/auth/AcceptInvitePage';
 import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
+import { AuditLogPage } from '@/features/audit/AuditLogPage';
 import { BrandsPage } from '@/features/brands/BrandsPage';
 import { CompanyDetailPage } from '@/features/companies/CompanyDetailPage';
 import { CompanyListPage } from '@/features/companies/CompanyListPage';
@@ -122,6 +123,7 @@ export function AppRouter() {
         <Route path="/teams" element={<TeamListPage />} />
         <Route path="/teams/:teamId" element={<TeamDetailPage />} />
         <Route path="/users" element={<UsersPage />} />
+        <Route path="/audit-log" element={<AuditLogPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

@@ -11,6 +11,7 @@ import { RequestContextModule } from './common/request-context/request-context.m
 import { AppConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
+import { AuditLogsModule } from './modules/audit/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
@@ -99,6 +100,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     FilesModule,
     NotificationsModule,
     AddressesModule,
+    AuditLogsModule,
     HealthModule,
   ],
   providers: [

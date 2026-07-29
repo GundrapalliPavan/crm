@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Product } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -10,7 +11,10 @@ import { PRODUCT_INCLUDE, toProduct } from './product.mapper';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListProductsQuery): Promise<ApiCollectionResponse<Product>> {
     const where: Prisma.ProductWhereInput = { archivedAt: null };
@@ -79,10 +83,18 @@ export class ProductsService {
       include: PRODUCT_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'product.created',
+      entityType: 'product',
+      entityId: product.id,
+      afterData: { sku: product.sku, name: product.name },
+    });
+
     return toProduct(product);
   }
 
-  async update(id: string, dto: UpdateProductDto): Promise<Product> {
+  async update(id: string, dto: UpdateProductDto, actorUserId: string): Promise<Product> {
     const existing = await this.prisma.product.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Product not found.');
@@ -99,11 +111,27 @@ export class ProductsService {
       include: PRODUCT_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'product.updated',
+      entityType: 'product',
+      entityId: id,
+      // Reference prices are the field most worth a before/after trail (PROJECT.md section 48 - "Price Changes").
+      beforeData: {
+        purchasePriceReference: existing.purchasePriceReference?.toString() ?? null,
+        sellingPriceReference: existing.sellingPriceReference?.toString() ?? null,
+      },
+      afterData: {
+        purchasePriceReference: product.purchasePriceReference?.toString() ?? null,
+        sellingPriceReference: product.sellingPriceReference?.toString() ?? null,
+      },
+    });
+
     return toProduct(product);
   }
 
   /** DELETE means archive (matching Leads/Contacts/Companies) - historical documents keep resolving the product. */
-  async archive(id: string): Promise<void> {
+  async archive(id: string, actorUserId: string): Promise<void> {
     const existing = await this.prisma.product.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Product not found.');
@@ -113,6 +141,12 @@ export class ProductsService {
     }
 
     await this.prisma.product.update({ where: { id }, data: { archivedAt: new Date() } });
+    await this.auditService.record({
+      actorUserId,
+      action: 'product.archived',
+      entityType: 'product',
+      entityId: id,
+    });
   }
 
   private async assertReferencesExist(
