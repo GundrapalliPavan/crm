@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import type { FileAttachment } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { assertEntityExists } from '../../common/entities/entity-existence';
 import { NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
@@ -38,6 +39,7 @@ export class FilesService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly auditService: AuditService,
   ) {}
 
   async list(query: ListFilesQuery): Promise<{ data: FileAttachment[] }> {
@@ -84,6 +86,18 @@ export class FilesService {
       include: FILE_LINK_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'file_attachment.uploaded',
+      entityType: 'file_attachment',
+      entityId: link.fileId,
+      afterData: {
+        originalFilename: file.originalname,
+        relatedEntityType: dto.relatedEntityType,
+        relatedEntityId: dto.relatedEntityId,
+      },
+    });
+
     return toFileAttachment(link);
   }
 
@@ -94,10 +108,18 @@ export class FilesService {
   }
 
   /** Soft-deletes the metadata row (DATABASE.md section 93's `deleted_at`) but reclaims the storage bytes - there is no restore feature in this pass. */
-  async delete(fileId: string): Promise<void> {
+  async delete(fileId: string, actorUserId: string): Promise<void> {
     const file = await this.getActiveFileOrThrow(fileId);
     await this.storage.delete(file.storageKey);
     await this.prisma.file.update({ where: { id: fileId }, data: { deletedAt: new Date() } });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'file_attachment.deleted',
+      entityType: 'file_attachment',
+      entityId: fileId,
+      beforeData: { originalFilename: file.originalFilename },
+    });
   }
 
   private async getActiveFileOrThrow(fileId: string) {

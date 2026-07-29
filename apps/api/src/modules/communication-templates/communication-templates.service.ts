@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, CommunicationTemplate } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateCommunicationTemplateDto } from './dto/create-communication-template.dto';
@@ -10,7 +11,10 @@ import { toCommunicationTemplate } from './communication-template.mapper';
 
 @Injectable()
 export class CommunicationTemplatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListCommunicationTemplatesQuery): Promise<ApiCollectionResponse<CommunicationTemplate>> {
     const where: Prisma.CommunicationTemplateWhereInput = {};
@@ -58,10 +62,19 @@ export class CommunicationTemplatesService {
         createdBy: actorUserId,
       },
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'communication_template.created',
+      entityType: 'communication_template',
+      entityId: template.id,
+      afterData: { name: template.name, channel: template.channel },
+    });
+
     return toCommunicationTemplate(template);
   }
 
-  async update(id: string, dto: UpdateCommunicationTemplateDto): Promise<CommunicationTemplate> {
+  async update(id: string, dto: UpdateCommunicationTemplateDto, actorUserId: string): Promise<CommunicationTemplate> {
     const existing = await this.getOrThrow(id);
     if (dto.name || dto.channel) {
       await this.assertNoDuplicate(dto.name ?? existing.name, dto.channel ?? existing.channel, id);
@@ -80,6 +93,16 @@ export class CommunicationTemplatesService {
         status: dto.status,
       },
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'communication_template.updated',
+      entityType: 'communication_template',
+      entityId: id,
+      beforeData: { bodyTemplate: existing.bodyTemplate, status: existing.status },
+      afterData: { bodyTemplate: template.bodyTemplate, status: template.status },
+    });
+
     return toCommunicationTemplate(template);
   }
 

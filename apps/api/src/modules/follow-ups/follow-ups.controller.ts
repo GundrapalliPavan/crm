@@ -46,8 +46,12 @@ export class FollowUpsController {
 
   @RequirePermission('follow_up.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFollowUpDto): Promise<FollowUp> {
-    return this.followUpsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateFollowUpDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<FollowUp> {
+    return this.followUpsService.update(id, dto, actor.id);
   }
 
   @RequirePermission('follow_up.complete')
@@ -64,8 +68,8 @@ export class FollowUpsController {
   @RequirePermission('follow_up.update')
   @HttpCode(HttpStatus.OK)
   @Post(':id/cancel')
-  cancel(@Param('id', ParseUUIDPipe) id: string): Promise<FollowUp> {
-    return this.followUpsService.cancel(id);
+  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<FollowUp> {
+    return this.followUpsService.cancel(id, actor.id);
   }
 }
 

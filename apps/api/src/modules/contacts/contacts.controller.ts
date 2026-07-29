@@ -46,14 +46,18 @@ export class ContactsController {
 
   @RequirePermission('contact.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateContactDto): Promise<Contact> {
-    return this.contactsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateContactDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Contact> {
+    return this.contactsService.update(id, dto, actor.id);
   }
 
   @RequirePermission('contact.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Delete(':id')
-  archive(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.contactsService.archive(id);
+  archive(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
+    return this.contactsService.archive(id, actor.id);
   }
 }

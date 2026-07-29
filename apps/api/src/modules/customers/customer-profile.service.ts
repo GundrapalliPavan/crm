@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CustomerProfile } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { BusinessRuleError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { UpsertCustomerProfileDto } from './dto/upsert-customer-profile.dto';
@@ -13,7 +14,10 @@ export interface EffectiveBillingProfile {
 
 @Injectable()
 export class CustomerProfileService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async getByCompanyId(companyId: string): Promise<{ data: CustomerProfile | null }> {
     await this.assertIsCustomer(companyId);
@@ -21,8 +25,10 @@ export class CustomerProfileService {
     return { data: profile ? toCustomerProfile(profile) : null };
   }
 
-  async upsert(companyId: string, dto: UpsertCustomerProfileDto): Promise<CustomerProfile> {
+  async upsert(companyId: string, dto: UpsertCustomerProfileDto, actorUserId: string): Promise<CustomerProfile> {
     await this.assertIsCustomer(companyId);
+
+    const existing = await this.prisma.customerProfile.findUnique({ where: { companyId } });
 
     const profile = await this.prisma.customerProfile.upsert({
       where: { companyId },
@@ -40,6 +46,18 @@ export class CustomerProfileService {
         customerSince: dto.customerSince ? new Date(dto.customerSince) : undefined,
       },
     });
+
+    await this.auditService.record({
+      actorUserId,
+      action: existing ? 'customer_profile.updated' : 'customer_profile.created',
+      entityType: 'customer_profile',
+      entityId: profile.companyId,
+      beforeData: existing
+        ? { creditLimit: existing.creditLimit?.toString() ?? null, paymentTermsDays: existing.paymentTermsDays }
+        : undefined,
+      afterData: { creditLimit: profile.creditLimit?.toString() ?? null, paymentTermsDays: profile.paymentTermsDays },
+    });
+
     return toCustomerProfile(profile);
   }
 

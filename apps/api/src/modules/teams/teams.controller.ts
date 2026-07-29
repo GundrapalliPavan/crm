@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
-import type { ApiCollectionResponse, Team, TeamMember } from '@crm/types';
+import type { ApiCollectionResponse, AuthenticatedUser, Team, TeamMember } from '@crm/types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
 import { CreateTeamDto } from './dto/create-team.dto';
@@ -26,14 +27,18 @@ export class TeamsController {
 
   @RequirePermission('team.manage')
   @Post()
-  create(@Body() dto: CreateTeamDto): Promise<Team> {
-    return this.teamsService.create(dto);
+  create(@Body() dto: CreateTeamDto, @CurrentUser() actor: AuthenticatedUser): Promise<Team> {
+    return this.teamsService.create(dto, actor.id);
   }
 
   @RequirePermission('team.manage')
   @Patch(':teamId')
-  update(@Param('teamId', ParseUUIDPipe) teamId: string, @Body() dto: UpdateTeamDto): Promise<Team> {
-    return this.teamsService.update(teamId, dto);
+  update(
+    @Param('teamId', ParseUUIDPipe) teamId: string,
+    @Body() dto: UpdateTeamDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Team> {
+    return this.teamsService.update(teamId, dto, actor.id);
   }
 
   @RequirePermission('team.manage')
@@ -47,8 +52,9 @@ export class TeamsController {
   addMember(
     @Param('teamId', ParseUUIDPipe) teamId: string,
     @Body() dto: AddTeamMemberDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<TeamMember> {
-    return this.teamsService.addMember(teamId, dto);
+    return this.teamsService.addMember(teamId, dto, actor.id);
   }
 
   @RequirePermission('team.manage')
@@ -56,7 +62,8 @@ export class TeamsController {
   removeMember(
     @Param('teamId', ParseUUIDPipe) teamId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<void> {
-    return this.teamsService.removeMember(teamId, userId);
+    return this.teamsService.removeMember(teamId, userId, actor.id);
   }
 }

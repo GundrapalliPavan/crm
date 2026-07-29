@@ -12,3 +12,4 @@ export * from './teams';
 export * from './files';
 export * from './notifications';
 export * from './addresses';
+export * from './audit';

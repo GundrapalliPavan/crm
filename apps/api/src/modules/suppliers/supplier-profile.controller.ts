@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch } from '@nestjs/common';
-import type { SupplierProfile } from '@crm/types';
+import type { AuthenticatedUser, SupplierProfile } from '@crm/types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { UpsertSupplierProfileDto } from './dto/upsert-supplier-profile.dto';
 import { SupplierProfileService } from './supplier-profile.service';
@@ -24,7 +25,8 @@ export class SupplierProfileController {
   upsert(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpsertSupplierProfileDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<SupplierProfile> {
-    return this.supplierProfileService.upsert(id, dto);
+    return this.supplierProfileService.upsert(id, dto, actor.id);
   }
 }

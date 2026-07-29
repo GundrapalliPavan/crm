@@ -26,6 +26,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm --filter @crm/types build
+
       - run: pnpm --filter @crm/web lint
       - run: pnpm --filter @crm/web typecheck
       - run: pnpm --filter @crm/web build

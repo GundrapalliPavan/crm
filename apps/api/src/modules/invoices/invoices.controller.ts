@@ -36,8 +36,12 @@ export class InvoicesController {
 
   @RequirePermission('invoice.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateInvoiceDto): Promise<Invoice> {
-    return this.invoicesService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateInvoiceDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Invoice> {
+    return this.invoicesService.update(id, dto, actor.id);
   }
 
   @RequirePermission('invoice.issue')

@@ -36,8 +36,12 @@ export class QuotationsController {
 
   @RequirePermission('quotation.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateQuotationDto): Promise<Quotation> {
-    return this.quotationsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateQuotationDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Quotation> {
+    return this.quotationsService.update(id, dto, actor.id);
   }
 
   @RequirePermission('quotation.update')

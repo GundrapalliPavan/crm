@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { ProductCategory } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { ConflictError, NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductCategoryDto } from './dto/create-product-category.dto';
@@ -11,7 +12,10 @@ type CategoryWithParent = Awaited<ReturnType<ProductCategoriesService['getRawByI
 
 @Injectable()
 export class ProductCategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(): Promise<{ data: ProductCategory[] }> {
     const categories = await this.prisma.productCategory.findMany({
@@ -36,7 +40,7 @@ export class ProductCategoriesService {
    * name), which Postgres does not enforce across NULL parentId values, so
    * top-level duplicates are checked explicitly here.
    */
-  async create(dto: CreateProductCategoryDto): Promise<ProductCategory> {
+  async create(dto: CreateProductCategoryDto, actorUserId: string): Promise<ProductCategory> {
     if (dto.parentId) {
       const parent = await this.prisma.productCategory.findUnique({ where: { id: dto.parentId } });
       if (!parent) {
@@ -51,10 +55,18 @@ export class ProductCategoriesService {
       include: CATEGORY_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'product_category.created',
+      entityType: 'product_category',
+      entityId: category.id,
+      afterData: { name: category.name },
+    });
+
     return this.toProductCategory(category);
   }
 
-  async update(id: string, dto: UpdateProductCategoryDto): Promise<ProductCategory> {
+  async update(id: string, dto: UpdateProductCategoryDto, actorUserId: string): Promise<ProductCategory> {
     const existing = await this.prisma.productCategory.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Product category not found.');
@@ -81,6 +93,15 @@ export class ProductCategoriesService {
       where: { id },
       data: dto,
       include: CATEGORY_INCLUDE,
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'product_category.updated',
+      entityType: 'product_category',
+      entityId: id,
+      beforeData: { name: existing.name, isActive: existing.isActive },
+      afterData: { name: category.name, isActive: category.isActive },
     });
 
     return this.toProductCategory(category);

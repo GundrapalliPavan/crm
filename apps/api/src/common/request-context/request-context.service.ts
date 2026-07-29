@@ -3,6 +3,9 @@ import { Injectable } from '@nestjs/common';
 
 export interface RequestContext {
   requestId: string;
+  /** Absent outside an HTTP request (background jobs, startup, tests calling services directly). */
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 /**
@@ -27,5 +30,13 @@ export class RequestContextService {
    */
   get requestId(): string | undefined {
     return this.storage.getStore()?.requestId;
+  }
+
+  get ipAddress(): string | undefined {
+    return this.storage.getStore()?.ipAddress;
+  }
+
+  get userAgent(): string | undefined {
+    return this.storage.getStore()?.userAgent;
   }
 }

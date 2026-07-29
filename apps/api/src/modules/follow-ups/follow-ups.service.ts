@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, FollowUp } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
@@ -11,7 +12,10 @@ import { FOLLOW_UP_INCLUDE, toFollowUp } from './follow-up.mapper';
 
 @Injectable()
 export class FollowUpsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async list(query: ListFollowUpsQuery): Promise<ApiCollectionResponse<FollowUp>> {
     const where: Prisma.FollowUpWhereInput = {};
@@ -91,10 +95,18 @@ export class FollowUpsService {
       include: FOLLOW_UP_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'follow_up.created',
+      entityType: 'follow_up',
+      entityId: followUp.id,
+      afterData: { followUpType: followUp.followUpType, assignedTo: followUp.assignedTo },
+    });
+
     return toFollowUp(followUp);
   }
 
-  async update(id: string, dto: UpdateFollowUpDto): Promise<FollowUp> {
+  async update(id: string, dto: UpdateFollowUpDto, actorUserId: string): Promise<FollowUp> {
     const existing = await this.prisma.followUp.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Follow-up not found.');
@@ -109,6 +121,15 @@ export class FollowUpsService {
         notes: dto.notes,
       },
       include: FOLLOW_UP_INCLUDE,
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'follow_up.updated',
+      entityType: 'follow_up',
+      entityId: id,
+      beforeData: { assignedTo: existing.assignedTo, scheduledAt: existing.scheduledAt.toISOString() },
+      afterData: { assignedTo: followUp.assignedTo, scheduledAt: followUp.scheduledAt.toISOString() },
     });
 
     return toFollowUp(followUp);
@@ -138,6 +159,14 @@ export class FollowUpsService {
       include: FOLLOW_UP_INCLUDE,
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'follow_up.completed',
+      entityType: 'follow_up',
+      entityId: id,
+      afterData: { outcome: followUp.outcome },
+    });
+
     if (dto.nextFollowUp) {
       await this.create(
         {
@@ -156,7 +185,7 @@ export class FollowUpsService {
     return toFollowUp(followUp);
   }
 
-  async cancel(id: string): Promise<FollowUp> {
+  async cancel(id: string, actorUserId: string): Promise<FollowUp> {
     const existing = await this.prisma.followUp.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Follow-up not found.');
@@ -169,6 +198,13 @@ export class FollowUpsService {
       where: { id },
       data: { status: 'cancelled' },
       include: FOLLOW_UP_INCLUDE,
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'follow_up.cancelled',
+      entityType: 'follow_up',
+      entityId: id,
     });
 
     return toFollowUp(followUp);

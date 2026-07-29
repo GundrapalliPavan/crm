@@ -8,6 +8,7 @@ import type {
   StockMovement,
   StockAdjustmentReason,
 } from '@crm/types';
+import { AuditService } from '../../common/audit/audit.service';
 import { DOMAIN_EVENTS } from '../../common/events/domain-events';
 import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import { NotFoundError, ValidationError } from '../../common/errors/app-error';
@@ -35,6 +36,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly auditService: AuditService,
   ) {}
 
   async list(query: ListInventoryQuery): Promise<ApiCollectionResponse<InventoryBalance>> {
@@ -152,6 +154,20 @@ export class InventoryService {
     // separate connection) must never be observable before the change it
     // describes is actually durable.
     await this.emitIfCrossedIntoLowStock(before, after);
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'inventory_balance.adjusted',
+      entityType: 'inventory_balance',
+      entityId: await this.getBalanceId(dto.productId, dto.warehouseId),
+      metadata: {
+        productId: dto.productId,
+        warehouseId: dto.warehouseId,
+        quantityDelta: delta.toString(),
+        reason: dto.reason,
+      },
+    });
+
     return after;
   }
 
@@ -233,6 +249,20 @@ export class InventoryService {
     });
 
     await this.emitIfCrossedIntoLowStock(fromBefore, from);
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'inventory_balance.transferred',
+      entityType: 'inventory_balance',
+      entityId: await this.getBalanceId(dto.productId, dto.fromWarehouseId),
+      metadata: {
+        productId: dto.productId,
+        fromWarehouseId: dto.fromWarehouseId,
+        toWarehouseId: dto.toWarehouseId,
+        quantity: quantity.toString(),
+      },
+    });
+
     return { from, to };
   }
 
@@ -292,6 +322,15 @@ export class InventoryService {
       create: { id: randomUUID(), productId, warehouseId },
       update: {},
     });
+  }
+
+  /** The API's InventoryBalance shape is keyed by (productId, warehouseId), not a single id - audit records still need the row's real id to be filterable by entityId. */
+  private async getBalanceId(productId: string, warehouseId: string): Promise<string> {
+    const balance = await this.prisma.inventoryBalance.findUniqueOrThrow({
+      where: { productId_warehouseId: { productId, warehouseId } },
+      select: { id: true },
+    });
+    return balance.id;
   }
 
   private async fetchBalance(

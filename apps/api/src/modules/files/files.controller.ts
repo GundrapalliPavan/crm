@@ -60,7 +60,7 @@ export class FilesController {
 
   @RequirePermission('file.delete')
   @Delete(':fileId')
-  delete(@Param('fileId', ParseUUIDPipe) fileId: string): Promise<void> {
-    return this.filesService.delete(fileId);
+  delete(@Param('fileId', ParseUUIDPipe) fileId: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
+    return this.filesService.delete(fileId, actor.id);
   }
 }

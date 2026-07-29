@@ -42,8 +42,12 @@ export class SalesOrdersController {
 
   @RequirePermission('sales_order.update')
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalesOrderDto): Promise<SalesOrder> {
-    return this.salesOrdersService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSalesOrderDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<SalesOrder> {
+    return this.salesOrdersService.update(id, dto, actor.id);
   }
 
   @RequirePermission('sales_order.confirm')

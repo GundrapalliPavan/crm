@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import type { ProductCategory } from '@crm/types';
+import type { AuthenticatedUser, ProductCategory } from '@crm/types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CreateProductCategoryDto } from './dto/create-product-category.dto';
 import { UpdateProductCategoryDto } from './dto/update-product-category.dto';
@@ -28,8 +29,11 @@ export class ProductCategoriesController {
 
   @RequirePermission('product.create')
   @Post()
-  create(@Body() dto: CreateProductCategoryDto): Promise<ProductCategory> {
-    return this.categoriesService.create(dto);
+  create(
+    @Body() dto: CreateProductCategoryDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<ProductCategory> {
+    return this.categoriesService.create(dto, actor.id);
   }
 
   @RequirePermission('product.update')
@@ -37,7 +41,8 @@ export class ProductCategoriesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductCategoryDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<ProductCategory> {
-    return this.categoriesService.update(id, dto);
+    return this.categoriesService.update(id, dto, actor.id);
   }
 }

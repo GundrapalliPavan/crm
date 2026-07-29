@@ -108,10 +108,18 @@ export class QuotationsService {
       return created;
     });
 
+    await this.auditService.record({
+      actorUserId,
+      action: 'quotation.created',
+      entityType: 'quotation',
+      entityId: quotation.id,
+      afterData: { quotationNumber: quotation.quotationNumber, totalAmount: quotation.totalAmount.toString() },
+    });
+
     return toQuotation(quotation);
   }
 
-  async update(id: string, dto: UpdateQuotationDto): Promise<Quotation> {
+  async update(id: string, dto: UpdateQuotationDto, actorUserId: string): Promise<Quotation> {
     const existing = await this.getDetailOrThrow(id);
     if (existing.status !== 'draft') {
       throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a draft quotation can be edited.');
@@ -151,6 +159,15 @@ export class QuotationsService {
         },
         include: QUOTATION_DETAIL_INCLUDE,
       });
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'quotation.updated',
+      entityType: 'quotation',
+      entityId: id,
+      beforeData: { totalAmount: existing.totalAmount.toString() },
+      afterData: { totalAmount: quotation.totalAmount.toString() },
     });
 
     return toQuotation(quotation);
