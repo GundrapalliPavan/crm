@@ -84,6 +84,13 @@ describe('Communication (e2e)', () => {
     return { user, token, auth: () => ({ Authorization: `Bearer ${token}` }) };
   }
 
+  /** An authenticated actor holding no role at all, for permission-denial checks unrelated to any specific role. */
+  async function noPermissionsRequest() {
+    const user = await createUser();
+    const token = await accessTokenFor(user.email);
+    return { auth: () => ({ Authorization: `Bearer ${token}` }) };
+  }
+
   async function createTemplate(
     auth: () => Record<string, string>,
     overrides: { channel?: string; bodyTemplate?: string; subjectTemplate?: string } = {},
@@ -292,7 +299,7 @@ describe('Communication (e2e)', () => {
     });
 
     it('denies sending without communication.send', async () => {
-      const { auth } = await authedRequest('Sales Executive');
+      const { auth } = await noPermissionsRequest();
       const response = await request(app.getHttpServer())
         .post('/api/v1/communications')
         .set(auth())

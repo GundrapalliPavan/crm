@@ -437,6 +437,66 @@ describe('CRM & Lead Management (e2e)', () => {
     });
   });
 
+  /**
+   * PROJECT.md section 9's "Sales Team" persona (Field Sales Executive,
+   * Telecaller, alongside desk-based Sales Executive) previously had no
+   * usable account - every non-Administrator role held zero permissions.
+   * These roles now hold a real grant, so an admin-created account for
+   * either is actually able to do field-force work end to end.
+   */
+  describe('Field-force roles', () => {
+    it('lets a Field Sales Executive create a lead and log a follow-up', async () => {
+      const user = await createUser({ roleName: 'Field Sales Executive' });
+      const token = await accessTokenFor(user.email);
+      const auth = () => ({ Authorization: `Bearer ${token}` });
+
+      const lead = await request(app.getHttpServer())
+        .post('/api/v1/leads')
+        .set(auth())
+        .send({ firstName: 'Field Visit Lead', phone: '9000000001', leadType: 'dealer' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/follow-ups')
+        .set(auth())
+        .send({
+          leadId: lead.body.id,
+          assignedTo: user.id,
+          followUpType: 'visit',
+          scheduledAt: new Date().toISOString(),
+        })
+        .expect(201);
+    });
+
+    it('lets a Telecaller read and update leads', async () => {
+      const user = await createUser({ roleName: 'Telecaller' });
+      const token = await accessTokenFor(user.email);
+      const auth = () => ({ Authorization: `Bearer ${token}` });
+
+      const lead = await request(app.getHttpServer())
+        .post('/api/v1/leads')
+        .set(auth())
+        .send({ firstName: 'Cold Call Lead', phone: '9000000002', leadType: 'other' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/leads/${lead.body.id}`)
+        .set(auth())
+        .send({ priority: 'high' })
+        .expect(200);
+    });
+
+    it('still denies a Field Sales Executive from approving a quotation - that stays with Sales Manager', async () => {
+      const user = await createUser({ roleName: 'Field Sales Executive' });
+      const token = await accessTokenFor(user.email);
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${randomUUID()}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+  });
+
   describe('Contacts', () => {
     it('creates, lists and archives a contact', async () => {
       const { auth } = await authedRequest();

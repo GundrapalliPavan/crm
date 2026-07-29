@@ -38,8 +38,14 @@ describe('reference data seed', () => {
     expect(counts.units).toBeGreaterThan(0);
     expect(counts.leadSources).toBeGreaterThan(0);
     expect(counts.applicationSettings).toBeGreaterThan(0);
-    // Administrator holds the full permission set.
-    expect(counts.rolePermissions).toBe(counts.permissions);
+    // Administrator holds the full permission set, and every other seeded
+    // role now holds a real (non-empty) grant of its own - so total grants
+    // exceed the permission count once more than one role has any.
+    expect(counts.rolePermissions).toBeGreaterThan(counts.permissions);
+
+    const salesExecutive = await testPrisma.role.findUniqueOrThrow({ where: { name: 'Sales Executive' } });
+    const salesExecutiveGrants = await testPrisma.rolePermission.count({ where: { roleId: salesExecutive.id } });
+    expect(salesExecutiveGrants).toBeGreaterThan(0);
   });
 
   it('never overwrites a reconfigured application setting on reseed', async () => {

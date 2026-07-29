@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type { PasswordResetToken } from '@prisma/client';
+import type { PasswordResetToken, TokenPurpose } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from '../auth.constants';
 
@@ -15,32 +15,37 @@ function hashToken(rawToken: string): string {
 }
 
 /**
- * Secure token lifecycle for password resets (Step 4 sections 42-45).
+ * Secure token lifecycle shared by two flows that must never be
+ * interchangeable (Step 4 sections 42-45): resetting a forgotten password on
+ * an already-active account, and activating an invited one for the first
+ * time. `purpose` keeps a token from one flow from being replayable against
+ * the other - `validateToken` checks it alongside expiry and single use.
  *
- * Delivery is out of scope here by design: no email/SMS provider is
- * configured yet (Phase 0), so this service only generates, stores and
- * consumes the token. See `AuthService.forgotPassword` for how the
- * not-yet-delivered token is surfaced in development.
+ * Delivery goes through `AccountEmailService`; if no provider is configured,
+ * the caller (`AuthService`) still logs the raw link outside production so
+ * the flow can be completed locally.
  */
 @Injectable()
 export class PasswordResetService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Invalidates any tokens already outstanding for this user before issuing a
-   * new one, so at most one reset link is ever valid at a time.
+   * Invalidates any tokens of the same purpose already outstanding for this
+   * user before issuing a new one, so at most one link per purpose is ever
+   * valid at a time.
    */
-  async createToken(userId: string): Promise<string> {
+  async createToken(userId: string, purpose: TokenPurpose = 'password_reset'): Promise<string> {
     const rawToken = randomBytes(RESET_TOKEN_BYTES).toString('base64url');
 
     await this.prisma.$transaction([
       this.prisma.passwordResetToken.updateMany({
-        where: { userId, consumedAt: null },
+        where: { userId, purpose, consumedAt: null },
         data: { consumedAt: new Date() },
       }),
       this.prisma.passwordResetToken.create({
         data: {
           userId,
+          purpose,
           tokenHash: hashToken(rawToken),
           expiresAt: new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000),
         },
@@ -50,12 +55,12 @@ export class PasswordResetService {
     return rawToken;
   }
 
-  async validateToken(rawToken: string): Promise<ResetTokenValidation> {
+  async validateToken(rawToken: string, purpose: TokenPurpose = 'password_reset'): Promise<ResetTokenValidation> {
     const token = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash: hashToken(rawToken) },
     });
 
-    if (!token || token.consumedAt || token.expiresAt.getTime() <= Date.now()) {
+    if (!token || token.purpose !== purpose || token.consumedAt || token.expiresAt.getTime() <= Date.now()) {
       return { status: 'invalid' };
     }
 

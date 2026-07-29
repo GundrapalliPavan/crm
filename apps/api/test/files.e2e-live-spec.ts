@@ -80,6 +80,13 @@ describe('File Attachments (e2e)', () => {
     return { user, token, auth: () => ({ Authorization: `Bearer ${token}` }) };
   }
 
+  /** An authenticated actor holding no role at all, for permission-denial checks unrelated to any specific role. */
+  async function noPermissionsRequest() {
+    const user = await createUser();
+    const token = await accessTokenFor(user.email);
+    return { auth: () => ({ Authorization: `Bearer ${token}` }) };
+  }
+
   async function createLead() {
     return testPrisma.lead.create({ data: { firstName: `Lead-${randomUUID().slice(0, 8)}` } });
   }
@@ -141,7 +148,7 @@ describe('File Attachments (e2e)', () => {
     });
 
     it('denies uploading without file.upload', async () => {
-      const { auth } = await authedRequest('Sales Executive');
+      const { auth } = await noPermissionsRequest();
       const lead = await createLead();
 
       await uploadRequest(auth, lead.id)
@@ -216,7 +223,7 @@ describe('File Attachments (e2e)', () => {
         .attach('file', Buffer.from('hello'), { filename: 'a.txt', contentType: 'text/plain' })
         .expect(201);
 
-      const { auth } = await authedRequest('Sales Executive');
+      const { auth } = await noPermissionsRequest();
       await request(app.getHttpServer())
         .get('/api/v1/files')
         .query({ relatedEntityType: 'lead', relatedEntityId: lead.id })

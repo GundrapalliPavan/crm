@@ -1,15 +1,10 @@
-import { randomInt } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { TEMPORARY_PASSWORD_LENGTH } from '../auth.constants';
-
-const TEMP_PASSWORD_ALPHABET =
-  'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
 
 /**
- * Password hashing and generation, isolated behind one service so no other
- * module ever touches `argon2` directly (Step 4 section 8: no custom
- * cryptography, one mature maintained implementation).
+ * Password hashing, isolated behind one service so no other module ever
+ * touches `argon2` directly (Step 4 section 8: no custom cryptography, one
+ * mature maintained implementation).
  */
 @Injectable()
 export class PasswordService {
@@ -27,18 +22,5 @@ export class PasswordService {
       // treated as a verification failure, not a server error.
       return false;
     }
-  }
-
-  /**
-   * A cryptographically random password for admin-provisioned accounts
-   * (Step 4 section 39). Guaranteed to satisfy the standard password policy so
-   * it never needs a separate validation path.
-   */
-  generateTemporaryPassword(): string {
-    let password = '';
-    for (let i = 0; i < TEMPORARY_PASSWORD_LENGTH; i += 1) {
-      password += TEMP_PASSWORD_ALPHABET[randomInt(TEMP_PASSWORD_ALPHABET.length)];
-    }
-    return password;
   }
 }

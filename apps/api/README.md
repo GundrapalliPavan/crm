@@ -91,9 +91,24 @@ This is a no-op once any administrator already exists, and a no-op entirely when
 unset - safe to leave in a normal `.env` after the first run. Unset both again once you have an
 administrator, so the credentials are not left sitting in the environment.
 
-**Known limitation.** Password reset issues and stores a secure token, but no email/SMS provider is
-configured yet (Phase 0 scope) - delivery is deferred. Outside production, the raw token is logged
-so the flow can be completed locally: `pnpm dev:api` and watch for `DEV ONLY: password reset token`.
+**Every other account is admin-invited, not self-registered.** `POST /users` (`user.create`) creates
+the account `inactive` with no password and emails an invite link
+(`{WEB_ORIGIN}/accept-invite?token=...`) via `AccountEmailService`; the recipient completes
+`POST /auth/accept-invite {token, password}` to set their own password, which activates the account
+and stamps `emailVerifiedAt`. Nothing secret is ever returned from `POST /users` - no temporary
+password, no token in the response body. See [Users](#users) below.
+
+**Password reset** (`POST /auth/forgot-password` -> emailed link -> `POST /auth/reset-password`) uses
+the same token mechanism, distinguished from invite tokens by a `TokenPurpose` column
+(`password_reset` vs `account_activation`) so a leaked or expired token from one flow can never be
+replayed against the other. `POST /auth/forgot-password` always returns the same response whether or
+not the email matches an account, to avoid confirming which emails have accounts.
+
+Both flows send through `AccountEmailService` -> `MessagingModule`'s `CommunicationProvider`
+(the same SendGrid-backed abstraction Communication uses) and degrade to an honest logged failure,
+never a thrown error, if no provider is configured. Outside production, the raw token is *also*
+logged so either flow can be completed locally without a real SendGrid account:
+`pnpm dev:api` and watch for `DEV ONLY: invite token` / `DEV ONLY: password reset token`.
 
 ## CRM & Lead Management (Module 1)
 
@@ -420,6 +435,61 @@ Notable behaviour:
 - **Team Performance (`GET /reports/team-performance`) closes the Module 7 deferral** - per-team lead/
   quotation/sales-order aggregates over the same resolved member set, gated by `report.view` like every
   other report.
+- **Field Sales Executive and Telecaller roles**, matching PROJECT.md section 9's "Sales Team" persona
+  group exactly (alongside the existing desk-based Sales Executive) - the roles most likely to use a
+  future field mobile app (PROJECT.md sections 33-43). No schema change: `Role` is already an open,
+  seeded table (DATABASE.md section 19 - "exact roles should remain configurable"), so this is purely a
+  `prisma/seed.ts` addition.
+- **Every non-Administrator role now holds a real permission grant** - until this pass, `Sales Manager`/
+  `Sales Executive`/`Inventory Manager`/`Purchase Manager`/`Billing User` all held zero permissions
+  (deliberately deferred at the time: "no project document defines it yet"), so assigning any of them
+  to a user gave that user no access to anything. `ROLE_PERMISSIONS` in `prisma/seed.ts` now grants each
+  a real set, grounded in PROJECT.md section 9's per-persona "Primary goals" lists, using only
+  permission codes that already existed. Field Sales Executive and Telecaller intentionally receive the
+  identical grant to Sales Executive - PROJECT.md groups all three under one persona with one shared
+  goals list, without differentiating between them (a stated simplifying assumption, not a documented
+  requirement). Sales roles do not receive `sales_order.create`/`.confirm`/`.cancel` or
+  `quotation.approve` (orders arise from an approved quotation; discount approval stays with
+  management) or `report.view` (Sales Team's own goals list has no "Reports" entry - that belongs to
+  Sales Manager). **Existing dev/local databases need a re-seed** (`pnpm --filter @crm/api db:seed`) to
+  pick up the new roles and grants - a running Postgres instance seeded before this change will not have
+  them until the seed runs again.
+- **A new Users page** (`/users`, gated by `user.read`) closes the last piece of this: the backend has
+  supported creating a user and assigning roles since Step 4, but no frontend page ever exposed it.
+  Reachable from the sidebar's Team section alongside Teams. Account creation itself moved from a
+  one-time temporary password to an invite-email flow in a later pass - see
+  [Account Onboarding & Password Recovery](#account-onboarding--password-recovery).
+
+## Account Onboarding & Password Recovery
+
+Admin-gated invite flow replacing the original one-time-temporary-password account creation, plus a
+real (previously stub-logged-only) email delivery path for password reset. Not a new module - it
+extends `auth`/`users` with a `username` display-handle field and a `TokenPurpose`-scoped token.
+
+Notable behaviour:
+
+- **`POST /users` creates an `inactive`, passwordless account**, not an active one with a generated
+  password - `CreateUserResponse` returns only the created `AuthenticatedUser`, never a secret.
+  `AccountEmailService` emails an invite link; the recipient calls `POST /auth/accept-invite
+  {token, password}` to set their own password, which flips the account to `active` and stamps
+  `emailVerifiedAt`.
+- **`TokenPurpose` (`password_reset` | `account_activation`) prevents cross-flow token replay** -
+  `PasswordResetService.createToken`/`validateToken` both take a purpose and filter/check it, so an
+  invite token can never be redeemed at `/auth/reset-password` and vice versa (covered by a
+  dedicated bidirectional test in `test/auth.e2e-live-spec.ts`).
+- **`username` is a display handle only, not a login credential** - nullable (existing accounts
+  predate the column), unique, shown in the Users table, but `POST /auth/login` still authenticates
+  by email. This was an explicit product decision (not implied by any existing doc) confirmed before
+  implementation.
+- **`MessagingModule` was extracted from `CommunicationsModule`** so `AuthModule`/`UsersModule` can
+  send system email (invite, password reset) through the same `CommunicationProvider`
+  (SendGrid-backed, see [Communication](#communication)) without duplicating Twilio/SendGrid provider
+  registration. These transactional emails deliberately do **not** go through the business
+  `communications` table - they aren't Lead/Company-facing interactions worth logging to the shared
+  activity timeline (CLAUDE.md section 27).
+- **Email/username uniqueness is checked before insert**, not left to surface as a raw Postgres
+  constraint violation - a friendly 409 `DUPLICATE_RESOURCE` either way, distinguishing which field
+  collided.
 
 ## File Attachments
 
@@ -566,7 +636,8 @@ Notable behaviour:
 
 `test:e2e:db` boots the real application (guards, middleware and all) against `TEST_DATABASE_URL`
 and exercises login, session rotation/reuse-detection, RBAC, user-status enforcement, password
-reset/change, audit logging, login rate-limiting, the CRM lead/follow-up/contact/company workflows,
+reset/change, invite-based account activation (creation, acceptance, and cross-purpose token-replay
+rejection), audit logging, login rate-limiting, the CRM lead/follow-up/contact/company workflows,
 the product/category/brand/unit catalogue, warehouses/stock balances/adjustments/transfers, the
 quotation/sales-order workflow (calculations, approval gate, conversion, stock-check confirmation),
 the purchase-order/goods-receipt workflow (calculations, always-approval, partial/full receiving,
@@ -602,8 +673,9 @@ Analytics - Dashboard, Leads/Sales/Inventory/Purchase/Billing/Outstanding/Team P
 Module 8 (Communication - Templates, Communications log, Unified Communication Timeline slices on
 Lead/Company/Invoice), Module 9 (Team Management - Teams & Reporting Structure: CRUD, membership,
 manager assignment, team-scoped visibility on Leads/Quotations/Sales Orders), File Attachments (a
-platform capability: upload/list/download/delete, attachable to any of ten entity types) and In-App
+platform capability: upload/list/download/delete, attachable to any of ten entity types), In-App
 Notifications (a platform capability: five domain-event-driven triggers, personal-scope
-list/unread-count/mark-read) complete, backend and frontend. See `PROJECT_SETUP.md` section 67 for
-the Phase 0 implementation order and this repo's own module roadmap for the planned build order
-after Phase 0.
+list/unread-count/mark-read) and Account Onboarding & Password Recovery (admin-gated invite-based
+account activation and emailed password reset, replacing the original temporary-password flow)
+complete, backend and frontend. See `PROJECT_SETUP.md` section 67 for the Phase 0 implementation
+order and this repo's own module roadmap for the planned build order after Phase 0.

@@ -17,6 +17,7 @@ import { clearRefreshTokenCookie, setRefreshTokenCookie } from './auth-cookie.ut
 import { REFRESH_TOKEN_COOKIE_NAME } from './auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
+import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
@@ -132,6 +133,14 @@ export class AuthController {
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
     await this.authService.resetPassword(dto.token, dto.newPassword);
+  }
+
+  @Public()
+  @Throttle(LOGIN_THROTTLE)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('accept-invite')
+  async acceptInvite(@Body() dto: AcceptInviteDto): Promise<void> {
+    await this.authService.acceptInvite(dto.token, dto.password);
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)

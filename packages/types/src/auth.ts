@@ -23,6 +23,8 @@ export interface AuthenticatedUser {
   id: string;
   firstName: string;
   lastName: string;
+  /** Display handle only - login is always by email. Null for accounts created before this field existed. */
+  username: string | null;
   email: string;
   status: 'active' | 'inactive' | 'suspended';
   roles: RoleSummary[];
@@ -65,18 +67,19 @@ export type UserStatus = 'active' | 'inactive' | 'suspended';
 export interface CreateUserRequest {
   firstName: string;
   lastName: string;
+  username: string;
   email: string;
   phone?: string;
 }
 
 /**
- * Returned exactly once, only to the administrator who created the account
- * (Step 4 section 84: no hardcoded or predictable credentials). The plaintext
- * value is never stored and never retrievable again.
+ * The new account starts `inactive` with no password - an invite email (with
+ * a verification link, not a temporary password) is sent to `user.email`,
+ * and the account activates itself when the recipient completes
+ * `POST /auth/accept-invite`. Nothing secret is ever returned here.
  */
 export interface CreateUserResponse {
   user: AuthenticatedUser;
-  temporaryPassword: string;
 }
 
 export interface UpdateUserStatusRequest {
@@ -85,6 +88,12 @@ export interface UpdateUserStatusRequest {
 
 export interface AssignUserRolesRequest {
   roleIds: string[];
+}
+
+/** The token from the invite email's link, plus the password the invited user is choosing for themselves. */
+export interface AcceptInviteRequest {
+  token: string;
+  password: string;
 }
 
 export interface PermissionSummary {

@@ -108,15 +108,178 @@ const PERMISSIONS: ReadonlyArray<{ code: string; name: string; module: string }>
   { code: 'audit.read', name: 'View audit history', module: 'admin' },
 ];
 
-/** System roles (DATABASE.md section 19). */
+/**
+ * System roles (DATABASE.md section 19). Field Sales Executive and Telecaller
+ * match PROJECT.md section 9's "Sales Team" persona group exactly (alongside
+ * the existing desk-based Sales Executive) - the group most likely to use a
+ * future field mobile app (PROJECT.md sections 33-43): visiting customers,
+ * working leads/follow-ups/quotations from the field.
+ */
 const ROLES: ReadonlyArray<{ name: string; description: string }> = [
   { name: 'Administrator', description: 'Full access to all modules and settings.' },
   { name: 'Sales Manager', description: 'Manages the sales team, pipeline and approvals.' },
   { name: 'Sales Executive', description: 'Works leads, follow-ups, quotations and orders.' },
+  { name: 'Field Sales Executive', description: 'Visits customers and works leads, quotations and orders from the field.' },
+  { name: 'Telecaller', description: 'Works leads and follow-ups by phone.' },
   { name: 'Inventory Manager', description: 'Manages stock, warehouses and adjustments.' },
   { name: 'Purchase Manager', description: 'Manages suppliers, purchase orders and receipts.' },
   { name: 'Billing User', description: 'Manages invoices, payments and receivables.' },
 ];
+
+/**
+ * Non-Administrator role-to-permission grants (Administrator gets every
+ * permission via `grantAdministratorAllPermissions`, unconditionally). Until
+ * now this matrix was deliberately empty - every seeded role except
+ * Administrator held zero permissions, so assigning "Sales Executive" to a
+ * new user gave them no access to anything. Grounded in PROJECT.md section 9's
+ * per-persona "Primary goals" lists, using only permission codes that already
+ * exist above - no new capability was invented for this pass.
+ *
+ * Field Sales Executive and Telecaller intentionally receive the identical
+ * set to Sales Executive: PROJECT.md groups all three under one "Sales Team"
+ * persona with one shared goals list, without differentiating between them.
+ * That is a stated simplifying assumption (CLAUDE.md section 68), not a
+ * documented requirement - narrowing it later (e.g. a read-only Telecaller)
+ * is a small, low-risk seed change whenever that distinction is actually
+ * asked for.
+ *
+ * Sales roles do not receive sales_order.create/confirm/cancel or
+ * quotation.approve - orders arise from an approved quotation, and discount
+ * approval is deliberately gated to management (CLAUDE.md section 28,
+ * Approval Workflows). They also do not receive report.view: PROJECT.md's
+ * Sales Team goals list has no "Reports" entry - that belongs to the Sales
+ * Management persona (Sales Manager), which does receive it.
+ */
+const SALES_TEAM_PERMISSIONS: readonly string[] = [
+  'lead.read',
+  'lead.create',
+  'lead.update',
+  'lead.convert',
+  'contact.read',
+  'contact.create',
+  'contact.update',
+  'company.read',
+  'company.create',
+  'company.update',
+  'follow_up.read',
+  'follow_up.create',
+  'follow_up.update',
+  'follow_up.complete',
+  'quotation.read',
+  'quotation.create',
+  'quotation.update',
+  'quotation.send',
+  'sales_order.read',
+  'sales_order.update',
+  'communication.read',
+  'communication.send',
+  'file.upload',
+  'file.read',
+  'address.read',
+  'address.manage',
+  'invoice.read',
+  'payment.read',
+];
+
+const ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  'Sales Manager': [
+    'lead.read',
+    'lead.create',
+    'lead.update',
+    'lead.assign',
+    'lead.convert',
+    'contact.read',
+    'contact.create',
+    'contact.update',
+    'company.read',
+    'company.create',
+    'company.update',
+    'follow_up.read',
+    'follow_up.create',
+    'follow_up.update',
+    'follow_up.complete',
+    'quotation.read',
+    'quotation.create',
+    'quotation.update',
+    'quotation.approve',
+    'quotation.send',
+    'sales_order.read',
+    'sales_order.create',
+    'sales_order.update',
+    'sales_order.confirm',
+    'sales_order.cancel',
+    'communication.read',
+    'communication.send',
+    'communication_template.manage',
+    'report.view',
+    'report.export',
+    'file.upload',
+    'file.read',
+    'file.delete',
+    'address.read',
+    'address.manage',
+    'invoice.read',
+    'payment.read',
+  ],
+  'Sales Executive': SALES_TEAM_PERMISSIONS,
+  'Field Sales Executive': SALES_TEAM_PERMISSIONS,
+  Telecaller: SALES_TEAM_PERMISSIONS,
+  'Inventory Manager': [
+    'product.read',
+    'inventory.read',
+    'inventory.adjust',
+    'inventory.transfer',
+    'warehouse.read',
+    'warehouse.manage',
+    'goods_receipt.read',
+    'goods_receipt.create',
+    'purchase_order.read',
+    'report.view',
+    'report.export',
+    'file.upload',
+    'file.read',
+    'address.read',
+    'address.manage',
+  ],
+  'Purchase Manager': [
+    'company.read',
+    'company.create',
+    'company.update',
+    'product.read',
+    'purchase_order.read',
+    'purchase_order.create',
+    'purchase_order.update',
+    'purchase_order.approve',
+    'purchase_order.send',
+    'goods_receipt.read',
+    'goods_receipt.create',
+    'report.view',
+    'report.export',
+    'file.upload',
+    'file.read',
+    'address.read',
+    'address.manage',
+    'communication.read',
+    'communication.send',
+  ],
+  'Billing User': [
+    'company.read',
+    'invoice.read',
+    'invoice.create',
+    'invoice.update',
+    'invoice.issue',
+    'invoice.cancel',
+    'payment.read',
+    'payment.record',
+    'payment.allocate',
+    'report.view',
+    'report.export',
+    'file.upload',
+    'file.read',
+    'communication.read',
+    'communication.send',
+  ],
+};
 
 /** DATABASE.md section 41. `decimalAllowed` drives fractional-quantity validation. */
 const UNITS: ReadonlyArray<{ name: string; symbol: string; decimalAllowed: boolean }> = [
@@ -183,12 +346,7 @@ async function seedRoles(prisma: PrismaClient): Promise<void> {
   }
 }
 
-/**
- * Administrator receives every permission, which follows from the role's
- * definition. The remaining role-to-permission matrix is deliberately left
- * empty: it is an authorisation policy decision that belongs to the RBAC step,
- * and no project document defines it yet.
- */
+/** Administrator receives every permission, which follows from the role's definition. */
 async function grantAdministratorAllPermissions(prisma: PrismaClient): Promise<void> {
   const administrator = await prisma.role.findUniqueOrThrow({
     where: { name: 'Administrator' },
@@ -202,6 +360,22 @@ async function grantAdministratorAllPermissions(prisma: PrismaClient): Promise<v
     })),
     skipDuplicates: true,
   });
+}
+
+/** Every other role's grants, per `ROLE_PERMISSIONS`. */
+async function seedNonAdministratorRolePermissions(prisma: PrismaClient): Promise<void> {
+  for (const [roleName, permissionCodes] of Object.entries(ROLE_PERMISSIONS)) {
+    const role = await prisma.role.findUniqueOrThrow({ where: { name: roleName } });
+    const permissions = await prisma.permission.findMany({
+      where: { code: { in: [...permissionCodes] } },
+      select: { id: true },
+    });
+
+    await prisma.rolePermission.createMany({
+      data: permissions.map((permission) => ({ roleId: role.id, permissionId: permission.id })),
+      skipDuplicates: true,
+    });
+  }
 }
 
 async function seedUnits(prisma: PrismaClient): Promise<void> {
@@ -248,6 +422,7 @@ export async function seedReferenceData(prisma: PrismaClient): Promise<void> {
   await seedPermissions(prisma);
   await seedRoles(prisma);
   await grantAdministratorAllPermissions(prisma);
+  await seedNonAdministratorRolePermissions(prisma);
   await seedUnits(prisma);
   await seedLeadSources(prisma);
   await seedApplicationSettings(prisma);

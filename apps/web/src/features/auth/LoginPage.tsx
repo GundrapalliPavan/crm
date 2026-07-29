@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Navigate, useLocation, useNavigate, type Location } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate, type Location } from 'react-router';
 import { Button } from '@/components/common/Button';
 import { TextField } from '@/components/common/TextField';
 import { ApiError } from '@/lib/api/api-error';
@@ -10,6 +10,8 @@ import { loginSchema, type LoginFormValues } from './schemas/login.schema';
 
 interface LocationState {
   from?: Location;
+  /** Set by ResetPasswordPage/AcceptInvitePage after a successful redirect here. */
+  message?: string;
 }
 
 /**
@@ -37,6 +39,8 @@ export function LoginPage() {
   if (status === 'authenticated') {
     return <Navigate to="/" replace />;
   }
+
+  const successMessage = (location.state as LocationState | null)?.message;
 
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
@@ -77,6 +81,15 @@ export function LoginPage() {
 
         <form noValidate onSubmit={(event) => void handleSubmit(onSubmit)(event)}>
           <div className="flex flex-col gap-4">
+            {successMessage && (
+              <div
+                role="status"
+                className="rounded-[var(--radius-input)] border border-[var(--color-success-border)] bg-[var(--color-success-bg)] px-3 py-2 text-sm text-[var(--color-success-text)]"
+              >
+                {successMessage}
+              </div>
+            )}
+
             {formError && (
               <div
                 role="alert"
@@ -108,6 +121,10 @@ export function LoginPage() {
             <Button type="submit" size="lg" isLoading={isSubmitting} className="mt-2 w-full">
               {isSubmitting ? 'Signing in…' : 'Sign in'}
             </Button>
+
+            <Link to="/forgot-password" className="text-center text-sm font-medium text-[var(--color-info-text)] underline">
+              Forgot password?
+            </Link>
           </div>
         </form>
       </div>
