@@ -138,6 +138,68 @@ describe('Authentication, Users & RBAC (e2e)', () => {
     });
   });
 
+  describe('mobile client (X-Client-Type: mobile)', () => {
+    it('returns the refresh token in the body instead of a cookie on login', async () => {
+      await createUser({ email: 'mobile-login@example.com', password: 'Str0ngPassphrase!' });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .set('X-Client-Type', 'mobile')
+        .send({ email: 'mobile-login@example.com', password: 'Str0ngPassphrase!' })
+        .expect(200);
+
+      expect(response.body.refreshToken).toEqual(expect.any(String));
+      expect(response.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('refreshes using a body-supplied token and rotates it in the body, not a cookie', async () => {
+      await createUser({ email: 'mobile-refresh@example.com', password: 'Str0ngPassphrase!' });
+      const loginResponse = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .set('X-Client-Type', 'mobile')
+        .send({ email: 'mobile-refresh@example.com', password: 'Str0ngPassphrase!' })
+        .expect(200);
+
+      const refreshResponse = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: loginResponse.body.refreshToken })
+        .expect(200);
+
+      expect(refreshResponse.body.accessToken).not.toBe(loginResponse.body.accessToken);
+      expect(refreshResponse.body.refreshToken).toEqual(expect.any(String));
+      expect(refreshResponse.body.refreshToken).not.toBe(loginResponse.body.refreshToken);
+      expect(refreshResponse.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('rejects reuse of an already-rotated body-supplied refresh token', async () => {
+      await createUser({ email: 'mobile-reuse@example.com', password: 'Str0ngPassphrase!' });
+      const loginResponse = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .set('X-Client-Type', 'mobile')
+        .send({ email: 'mobile-reuse@example.com', password: 'Str0ngPassphrase!' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: loginResponse.body.refreshToken })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: loginResponse.body.refreshToken })
+        .expect(401);
+    });
+
+    it('still honours the web cookie unchanged when no client-type header is sent', async () => {
+      await createUser({ email: 'still-web@example.com', password: 'Str0ngPassphrase!' });
+
+      const response = await login('still-web@example.com', 'Str0ngPassphrase!').expect(200);
+
+      expect(response.body.refreshToken).toBeUndefined();
+      expect(refreshCookieFrom(response)).toMatch(new RegExp(`^${REFRESH_TOKEN_COOKIE_NAME}=`));
+    });
+  });
+
   describe('protected routes and current user', () => {
     it('rejects a request with no access token', async () => {
       const response = await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);

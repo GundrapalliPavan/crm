@@ -17,9 +17,10 @@ import { PermissionsService } from './permissions.service';
 import { SessionService, type DeviceContext } from './session.service';
 import { TokenService } from './token.service';
 
-/** A login/refresh result plus the raw refresh token, which never appears in
- *  the JSON response - the controller consumes it only to set the httpOnly
- *  cookie (see AuthController). */
+/** A login/refresh result plus the raw refresh token. For a web request the
+ *  controller consumes this only to set the httpOnly cookie and it never
+ *  reaches the JSON response; a mobile request (no cookie jar to use) gets
+ *  it in the response body instead (see AuthController). */
 export interface IssuedCredentials<TResponse> {
   response: TResponse;
   rawRefreshToken: string;

@@ -14,13 +14,14 @@ import type { AuthenticatedUser, LoginResponse, RefreshResponse } from '@crm/typ
 import type { Request, Response } from 'express';
 import { AppConfigService } from '../../config/app-config.service';
 import { clearRefreshTokenCookie, setRefreshTokenCookie } from './auth-cookie.util';
-import { REFRESH_TOKEN_COOKIE_NAME } from './auth.constants';
+import { CLIENT_TYPE_HEADER, MOBILE_CLIENT_TYPE, REFRESH_TOKEN_COOKIE_NAME } from './auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshDto } from './dto/refresh.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthService } from './services/auth.service';
 import type { DeviceContext } from './services/session.service';
@@ -36,6 +37,11 @@ function deviceContextOf(request: Request): DeviceContext {
     userAgent: request.headers['user-agent'],
     ipAddress: request.ip,
   };
+}
+
+/** A native client identifies itself explicitly - inferring it from the absence of a cookie would be unreliable and, for login, security-relevant (see LoginResponse.refreshToken). */
+function isMobileClient(request: Request): boolean {
+  return request.header(CLIENT_TYPE_HEADER) === MOBILE_CLIENT_TYPE;
 }
 
 @Controller('auth')
@@ -60,6 +66,13 @@ export class AuthController {
       deviceContextOf(request),
     );
 
+    if (isMobileClient(request)) {
+      // No cookie jar to put it in, and a mobile app has nowhere else to
+      // get it from - the raw token travels in the body exactly once, for
+      // the caller to move straight into secure device storage.
+      return { ...body, refreshToken: rawRefreshToken };
+    }
+
     setRefreshTokenCookie(response, this.config, rawRefreshToken);
 
     return body;
@@ -69,12 +82,19 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   async refresh(
+    @Body() dto: RefreshDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<RefreshResponse> {
-    const rawRefreshToken: unknown = request.cookies?.[REFRESH_TOKEN_COOKIE_NAME];
+    // Web sends the cookie automatically and no body; a native client has no
+    // cookie jar for it and sends the token it stored from login() in the
+    // body instead. Whichever transport it arrived on is the one it leaves
+    // on, so a mobile refresh never ends up depending on a cookie it can't use.
+    const cookieToken = request.cookies?.[REFRESH_TOKEN_COOKIE_NAME];
+    const fromCookie = typeof cookieToken === 'string' && cookieToken.length > 0;
+    const rawRefreshToken = fromCookie ? cookieToken : dto.refreshToken;
 
-    if (typeof rawRefreshToken !== 'string' || rawRefreshToken.length === 0) {
+    if (!rawRefreshToken) {
       // Not one of our stable AppError codes: there is no session to speak
       // of, so this deliberately behaves like any other unauthenticated
       // request rather than claiming a specific (nonexistent) session expired.
@@ -86,9 +106,12 @@ export class AuthController {
       deviceContextOf(request),
     );
 
-    setRefreshTokenCookie(response, this.config, newRawToken);
+    if (fromCookie) {
+      setRefreshTokenCookie(response, this.config, newRawToken);
+      return body;
+    }
 
-    return body;
+    return { ...body, refreshToken: newRawToken };
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
