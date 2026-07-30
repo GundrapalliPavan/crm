@@ -36,16 +36,26 @@ export interface LoginRequest {
   password: string;
 }
 
-/** `accessToken` is a JWT the client attaches as `Authorization: Bearer`. */
+/**
+ * `accessToken` is a JWT the client attaches as `Authorization: Bearer`.
+ *
+ * `refreshToken` is present only for a client that sent `X-Client-Type:
+ * mobile` on the request - the web app never receives it in the body, since
+ * its refresh token stays exclusively in the httpOnly cookie a mobile app
+ * cannot use (MOBILE_ARCHITECTURE.md section 3.2/5).
+ */
 export interface LoginResponse {
   accessToken: string;
   accessTokenExpiresAt: string;
+  refreshToken?: string;
   user: AuthenticatedUser;
 }
 
 export interface RefreshResponse {
   accessToken: string;
   accessTokenExpiresAt: string;
+  /** Present only when the request supplied its refresh token in the body rather than a cookie - see `LoginResponse.refreshToken`. */
+  refreshToken?: string;
 }
 
 export interface ForgotPasswordRequest {

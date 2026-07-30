@@ -22,3 +22,12 @@ export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
 
 /** Name of the httpOnly cookie carrying the opaque refresh token. */
 export const REFRESH_TOKEN_COOKIE_NAME = 'crm_refresh_token';
+
+/**
+ * A native client (no cookie jar shared with the browser, can't read an
+ * httpOnly cookie anyway) sends this to opt into body-delivered refresh
+ * tokens on login instead of the web-only cookie (MOBILE_ARCHITECTURE.md
+ * section 3.2). Web sends nothing, and its behaviour is unchanged.
+ */
+export const CLIENT_TYPE_HEADER = 'x-client-type';
+export const MOBILE_CLIENT_TYPE = 'mobile';
