@@ -26,8 +26,8 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  if (!config.headers[REQUEST_ID_HEADER] && typeof crypto?.randomUUID === 'function') {
-    config.headers[REQUEST_ID_HEADER] = `req_${crypto.randomUUID()}`;
+  if (!config.headers[REQUEST_ID_HEADER] && typeof globalThis.crypto?.randomUUID === 'function') {
+    config.headers[REQUEST_ID_HEADER] = `req_${globalThis.crypto.randomUUID()}`;
   }
 
   const token = getAccessToken();
