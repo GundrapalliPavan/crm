@@ -435,6 +435,132 @@ describe('CRM & Lead Management (e2e)', () => {
       expect(mine.body.data).toHaveLength(1);
       expect(mine.body.data[0].assignee).toMatchObject({ id: other.id });
     });
+
+    /** MOBILE_ARCHITECTURE.md section 6, Option A - Site Visits check-in/check-out. */
+    describe('Visit check-in/check-out', () => {
+      it('rejects checking in a non-visit follow-up', async () => {
+        const { auth, user } = await authedRequest();
+        const company = await testPrisma.company.create({
+          data: { name: 'Non-Visit Co', companyType: 'other', createdBy: user.id },
+        });
+
+        const callFollowUp = await request(app.getHttpServer())
+          .post('/api/v1/follow-ups')
+          .set(auth())
+          .send({
+            companyId: company.id,
+            assignedTo: user.id,
+            followUpType: 'call',
+            scheduledAt: new Date().toISOString(),
+          })
+          .expect(201);
+
+        const response = await request(app.getHttpServer())
+          .post(`/api/v1/follow-ups/${callFollowUp.body.id}/check-in`)
+          .set(auth())
+          .send({})
+          .expect(409);
+        expect(response.body.error.code).toBe('INVALID_STATE_TRANSITION');
+      });
+
+      it('rejects checking in the same visit twice', async () => {
+        const { auth, user } = await authedRequest();
+        const company = await testPrisma.company.create({
+          data: { name: 'Double Check-In Co', companyType: 'other', createdBy: user.id },
+        });
+
+        const visit = await request(app.getHttpServer())
+          .post('/api/v1/follow-ups')
+          .set(auth())
+          .send({
+            companyId: company.id,
+            assignedTo: user.id,
+            followUpType: 'visit',
+            scheduledAt: new Date().toISOString(),
+          })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/api/v1/follow-ups/${visit.body.id}/check-in`)
+          .set(auth())
+          .send({ latitude: '12.9716', longitude: '77.5946' })
+          .expect(200);
+
+        const response = await request(app.getHttpServer())
+          .post(`/api/v1/follow-ups/${visit.body.id}/check-in`)
+          .set(auth())
+          .send({ latitude: '12.9716', longitude: '77.5946' })
+          .expect(409);
+        expect(response.body.error.code).toBe('INVALID_STATE_TRANSITION');
+      });
+
+      it('rejects completing a visit that was never checked in', async () => {
+        const { auth, user } = await authedRequest();
+        const company = await testPrisma.company.create({
+          data: { name: 'No Check-In Co', companyType: 'other', createdBy: user.id },
+        });
+
+        const visit = await request(app.getHttpServer())
+          .post('/api/v1/follow-ups')
+          .set(auth())
+          .send({
+            companyId: company.id,
+            assignedTo: user.id,
+            followUpType: 'visit',
+            scheduledAt: new Date().toISOString(),
+          })
+          .expect(201);
+
+        const response = await request(app.getHttpServer())
+          .post(`/api/v1/follow-ups/${visit.body.id}/complete`)
+          .set(auth())
+          .send({ outcome: 'Interested' })
+          .expect(409);
+        expect(response.body.error.code).toBe('INVALID_STATE_TRANSITION');
+      });
+
+      it('checks in then completes a visit, recording both sets of timestamps and coordinates', async () => {
+        const { auth, user } = await authedRequest();
+        const company = await testPrisma.company.create({
+          data: { name: 'Full Visit Co', companyType: 'other', createdBy: user.id },
+        });
+
+        const visit = await request(app.getHttpServer())
+          .post('/api/v1/follow-ups')
+          .set(auth())
+          .send({
+            companyId: company.id,
+            assignedTo: user.id,
+            followUpType: 'visit',
+            scheduledAt: new Date().toISOString(),
+          })
+          .expect(201);
+
+        const checkedIn = await request(app.getHttpServer())
+          .post(`/api/v1/follow-ups/${visit.body.id}/check-in`)
+          .set(auth())
+          .send({ latitude: '12.9716', longitude: '77.5946' })
+          .expect(200);
+
+        expect(checkedIn.body.checkInAt).not.toBeNull();
+        expect(checkedIn.body.checkInLatitude).toBe('12.9716');
+        expect(checkedIn.body.checkInLongitude).toBe('77.5946');
+        expect(checkedIn.body.status).toBe('pending');
+
+        const completed = await request(app.getHttpServer())
+          .post(`/api/v1/follow-ups/${visit.body.id}/complete`)
+          .set(auth())
+          .send({ outcome: 'Order placed', checkOutLatitude: '12.9720', checkOutLongitude: '77.5950' })
+          .expect(200);
+
+        expect(completed.body.status).toBe('completed');
+        expect(completed.body.checkInAt).toBe(checkedIn.body.checkInAt);
+        expect(completed.body.checkOutAt).not.toBeNull();
+        expect(completed.body.checkOutLatitude).toBe('12.972');
+        expect(completed.body.checkOutLongitude).toBe('77.595');
+        expect(completed.body.outcome).toBe('Order placed');
+      });
+    });
   });
 
   /**

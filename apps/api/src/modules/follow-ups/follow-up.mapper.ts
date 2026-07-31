@@ -26,6 +26,12 @@ export function toFollowUp(followUp: FollowUpWithRelations): FollowUp {
     notes: followUp.notes,
     outcome: followUp.outcome,
     completedAt: followUp.completedAt?.toISOString() ?? null,
+    checkInAt: followUp.checkInAt?.toISOString() ?? null,
+    checkInLatitude: followUp.checkInLatitude?.toString() ?? null,
+    checkInLongitude: followUp.checkInLongitude?.toString() ?? null,
+    checkOutAt: followUp.checkOutAt?.toISOString() ?? null,
+    checkOutLatitude: followUp.checkOutLatitude?.toString() ?? null,
+    checkOutLongitude: followUp.checkOutLongitude?.toString() ?? null,
     createdAt: followUp.createdAt.toISOString(),
   };
 }
