@@ -13,6 +13,7 @@ import {
 import type { ApiCollectionResponse, AuthenticatedUser, FollowUp } from '@crm/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
+import { CheckInFollowUpDto } from './dto/check-in-follow-up.dto';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQuery } from './dto/list-follow-ups.query';
@@ -52,6 +53,17 @@ export class FollowUpsController {
     @CurrentUser() actor: AuthenticatedUser,
   ): Promise<FollowUp> {
     return this.followUpsService.update(id, dto, actor.id);
+  }
+
+  @RequirePermission('follow_up.update')
+  @HttpCode(HttpStatus.OK)
+  @Post(':id/check-in')
+  checkIn(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CheckInFollowUpDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<FollowUp> {
+    return this.followUpsService.checkIn(id, dto, actor.id);
   }
 
   @RequirePermission('follow_up.complete')

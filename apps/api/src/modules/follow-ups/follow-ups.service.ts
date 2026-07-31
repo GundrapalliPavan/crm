@@ -4,6 +4,7 @@ import type { ApiCollectionResponse, FollowUp } from '@crm/types';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessRuleError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
+import { CheckInFollowUpDto } from './dto/check-in-follow-up.dto';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQuery } from './dto/list-follow-ups.query';
@@ -136,6 +137,47 @@ export class FollowUpsService {
   }
 
   /**
+   * MOBILE_ARCHITECTURE.md section 6, Option A - only meaningful for a
+   * `visit`-type follow-up: records where/when the rep physically arrived.
+   * Not a status transition (stays `pending`) - checkout still happens via
+   * the normal `complete` call below.
+   */
+  async checkIn(id: string, dto: CheckInFollowUpDto, actorUserId: string): Promise<FollowUp> {
+    const existing = await this.prisma.followUp.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundError('Follow-up not found.');
+    }
+    if (existing.followUpType !== 'visit') {
+      throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a visit follow-up can be checked in.');
+    }
+    if (existing.status !== 'pending') {
+      throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a pending visit can be checked in.');
+    }
+    if (existing.checkInAt) {
+      throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'This visit has already been checked in.');
+    }
+
+    const followUp = await this.prisma.followUp.update({
+      where: { id },
+      data: {
+        checkInAt: new Date(),
+        checkInLatitude: dto.latitude,
+        checkInLongitude: dto.longitude,
+      },
+      include: FOLLOW_UP_INCLUDE,
+    });
+
+    await this.auditService.record({
+      actorUserId,
+      action: 'follow_up.checked_in',
+      entityType: 'follow_up',
+      entityId: id,
+    });
+
+    return toFollowUp(followUp);
+  }
+
+  /**
    * CRM.md section 27: outcome + optional note + optional next follow-up, in
    * one call, so completing today's work naturally schedules tomorrow's.
    */
@@ -147,6 +189,9 @@ export class FollowUpsService {
     if (existing.status !== 'pending') {
       throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'Only a pending follow-up can be completed.');
     }
+    if (existing.followUpType === 'visit' && !existing.checkInAt) {
+      throw new BusinessRuleError('INVALID_STATE_TRANSITION', 'A visit must be checked in before it can be completed.');
+    }
 
     const followUp = await this.prisma.followUp.update({
       where: { id },
@@ -155,6 +200,9 @@ export class FollowUpsService {
         completedAt: new Date(),
         outcome: dto.outcome,
         notes: dto.notes ?? existing.notes,
+        checkOutAt: existing.followUpType === 'visit' ? new Date() : undefined,
+        checkOutLatitude: existing.followUpType === 'visit' ? dto.checkOutLatitude : undefined,
+        checkOutLongitude: existing.followUpType === 'visit' ? dto.checkOutLongitude : undefined,
       },
       include: FOLLOW_UP_INCLUDE,
     });

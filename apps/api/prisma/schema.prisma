@@ -631,20 +631,30 @@ model LeadActivity {
 /// DATABASE.md section 29. At least one CRM relationship must be present; this
 /// is enforced by a CHECK constraint added in the migration.
 model FollowUp {
-  id           String         @id @default(uuid()) @db.Uuid
-  leadId       String?        @map("lead_id") @db.Uuid
-  contactId    String?        @map("contact_id") @db.Uuid
-  companyId    String?        @map("company_id") @db.Uuid
-  assignedTo   String         @map("assigned_to") @db.Uuid
-  followUpType FollowUpType   @map("follow_up_type")
-  scheduledAt  DateTime       @map("scheduled_at") @db.Timestamptz(6)
-  status       FollowUpStatus @default(pending)
-  notes        String?
-  outcome      String?
-  completedAt  DateTime?      @map("completed_at") @db.Timestamptz(6)
-  createdBy    String?        @map("created_by") @db.Uuid
-  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String         @id @default(uuid()) @db.Uuid
+  leadId            String?        @map("lead_id") @db.Uuid
+  contactId         String?        @map("contact_id") @db.Uuid
+  companyId         String?        @map("company_id") @db.Uuid
+  assignedTo        String         @map("assigned_to") @db.Uuid
+  followUpType      FollowUpType   @map("follow_up_type")
+  scheduledAt       DateTime       @map("scheduled_at") @db.Timestamptz(6)
+  status            FollowUpStatus @default(pending)
+  notes             String?
+  outcome           String?
+  completedAt       DateTime?      @map("completed_at") @db.Timestamptz(6)
+  /// MOBILE_ARCHITECTURE.md section 6, Option A (chosen per explicit product
+  /// direction over the doc's own stated preference for a separate Visit
+  /// entity): a `visit`-type follow-up records where/when the rep physically
+  /// checked in and out. Null for every other followUpType.
+  checkInAt         DateTime?      @map("check_in_at") @db.Timestamptz(6)
+  checkInLatitude   Decimal?       @map("check_in_latitude") @db.Decimal(9, 6)
+  checkInLongitude  Decimal?       @map("check_in_longitude") @db.Decimal(9, 6)
+  checkOutAt        DateTime?      @map("check_out_at") @db.Timestamptz(6)
+  checkOutLatitude  Decimal?       @map("check_out_latitude") @db.Decimal(9, 6)
+  checkOutLongitude Decimal?       @map("check_out_longitude") @db.Decimal(9, 6)
+  createdBy         String?        @map("created_by") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
   contact  Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)

@@ -220,6 +220,13 @@ export interface FollowUp {
   notes: string | null;
   outcome: string | null;
   completedAt: string | null;
+  /** MOBILE_ARCHITECTURE.md section 6, Option A. Null for every followUpType other than 'visit'. */
+  checkInAt: string | null;
+  checkInLatitude: string | null;
+  checkInLongitude: string | null;
+  checkOutAt: string | null;
+  checkOutLatitude: string | null;
+  checkOutLongitude: string | null;
   createdAt: string;
 }
 
@@ -238,8 +245,17 @@ export type UpdateFollowUpRequest = Partial<Omit<CreateFollowUpRequest, 'leadId'
 export interface CompleteFollowUpRequest {
   outcome?: string;
   notes?: string;
+  /** MOBILE_ARCHITECTURE.md section 6 - only meaningful when completing a checked-in 'visit'. */
+  checkOutLatitude?: string;
+  checkOutLongitude?: string;
   /** CRM.md section 27 - encourages scheduling the next action in the same flow. */
   nextFollowUp?: CreateFollowUpRequest;
+}
+
+/** MOBILE_ARCHITECTURE.md section 6, Option A - check-in on a 'visit'-type follow-up. */
+export interface CheckInFollowUpRequest {
+  latitude?: string;
+  longitude?: string;
 }
 
 export interface Contact {
