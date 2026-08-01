@@ -245,6 +245,52 @@ describe('Billing (e2e)', () => {
       expect(duplicate.body.error.code).toBe('DUPLICATE_RESOURCE');
     });
 
+    it('blocks invoicing a sales order carrying an ad-hoc (non-catalog) line item', async () => {
+      const { auth } = await authedRequest();
+      const customer = await seedCustomer();
+
+      const quotation = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: customer.id,
+          quotationDate: '2026-07-27',
+          items: [{ customProductName: 'Site-measured cable run', quantity: '1', unitPrice: '500' }],
+        })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.body.id}/submit`)
+        .set(auth())
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.body.id}/send`)
+        .set(auth())
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.body.id}/accept`)
+        .set(auth())
+        .expect(200);
+      const order = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.body.id}/convert-to-order`)
+        .set(auth())
+        .expect(201);
+      expect(order.body.items[0]).toMatchObject({ productId: null, productName: 'Site-measured cable run' });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/sales-orders/${order.body.id}/confirm`)
+        .set(auth())
+        .expect(200);
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/sales-orders/${order.body.id}/create-invoice`)
+        .set(auth())
+        .send({})
+        .expect(409);
+      expect(response.body.error.code).toBe('INVALID_STATE_TRANSITION');
+      expect(response.body.error.message).toContain('Site-measured cable run');
+    });
+
     it('rejects invoicing a sales order that has not been confirmed', async () => {
       const { auth } = await authedRequest();
       const customer = await seedCustomer();

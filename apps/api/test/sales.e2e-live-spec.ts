@@ -295,6 +295,122 @@ describe('Sales (e2e)', () => {
     });
   });
 
+  /**
+   * An ad-hoc line item has no catalog product (mobile Field Sales Executive
+   * scope) - `customProductName` instead of `productId`. It is priced like
+   * any other line (Unit Price/Discount), but its tax rate is always 0% since
+   * there is no product to read a GST rate from.
+   */
+  describe('Ad-hoc line items', () => {
+    it('creates a quotation with a custom (non-catalog) item and calculates totals at 0% tax', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany();
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          quotationDate: '2026-07-27',
+          items: [{ customProductName: 'Custom Widget', quantity: '2', unitPrice: '500', discountPercentage: '10' }],
+        })
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        subtotal: '1000',
+        discountAmount: '100',
+        taxAmount: '0',
+        totalAmount: '900',
+      });
+      expect(response.body.items[0]).toMatchObject({
+        productId: null,
+        sku: null,
+        productName: 'Custom Widget',
+        unit: null,
+        taxRate: '0',
+        lineTotal: '900',
+      });
+    });
+
+    it('rejects an item with neither productId nor customProductName', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany();
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          quotationDate: '2026-07-27',
+          items: [{ quantity: '1', unitPrice: '100' }],
+        })
+        .expect(422);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects an item with both productId and customProductName', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany();
+      const product = await seedProduct();
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          quotationDate: '2026-07-27',
+          items: [{ productId: product.id, customProductName: 'Custom Widget', quantity: '1', unitPrice: '100' }],
+        })
+        .expect(422);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects a custom item with no unitPrice - there is no product to default one from', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany();
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          quotationDate: '2026-07-27',
+          items: [{ customProductName: 'Custom Widget', quantity: '1' }],
+        })
+        .expect(422);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('carries a custom item through Convert to Order', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany();
+
+      const quotation = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          quotationDate: '2026-07-27',
+          items: [{ customProductName: 'Custom Widget', quantity: '2', unitPrice: '500' }],
+        })
+        .expect(201);
+
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${quotation.body.id}/submit`).set(auth()).expect(200);
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${quotation.body.id}/send`).set(auth()).expect(200);
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${quotation.body.id}/accept`).set(auth()).expect(200);
+
+      const order = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.body.id}/convert-to-order`)
+        .set(auth())
+        .expect(201);
+      expect(order.body.items[0]).toMatchObject({
+        productId: null,
+        productName: 'Custom Widget',
+        lineTotal: '1000',
+      });
+    });
+  });
+
   describe('Sales Orders', () => {
     async function createDraftOrder(auth: () => Record<string, string>) {
       const company = await seedCompany();
@@ -393,7 +509,7 @@ describe('Sales (e2e)', () => {
     });
 
     it('denies sales order creation without sales_order.create', async () => {
-      const { auth } = await authedRequest('Sales Executive');
+      const { auth } = await authedRequest('Inventory Manager');
       const company = await seedCompany();
       const product = await seedProduct();
 
