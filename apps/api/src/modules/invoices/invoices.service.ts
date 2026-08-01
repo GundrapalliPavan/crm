@@ -165,7 +165,22 @@ export class InvoicesService {
     }
 
     const treatment = determineTaxTreatment(await this.getSellerStateCode(), salesOrder.customer.stateCode);
-    const lines = salesOrder.items.map((item) => resolveInvoiceLineFromSalesOrderItem(item, treatment));
+    const lines = salesOrder.items.map((item) => {
+      const { productId } = item;
+      if (productId === null) {
+        throw new BusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          `"${item.productNameSnapshot}" is a custom line item with no catalog product - replace it with a real product before invoicing.`,
+        );
+      }
+      // Invariant: skuSnapshot/unitSnapshot are null only together with
+      // productId (both set for a real product, both unset for an ad-hoc
+      // line) - already ruled out above, so these are safe to assert here.
+      return resolveInvoiceLineFromSalesOrderItem(
+        { ...item, productId, skuSnapshot: item.skuSnapshot!, unitSnapshot: item.unitSnapshot! },
+        treatment,
+      );
+    });
     const totals = calculateInvoiceTotals(lines);
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();

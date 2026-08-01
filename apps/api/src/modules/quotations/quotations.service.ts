@@ -5,8 +5,13 @@ import type { ApiCollectionResponse, Quotation, QuotationSummary, SalesOrder } f
 import { AuditService } from '../../common/audit/audit.service';
 import { DOMAIN_EVENTS } from '../../common/events/domain-events';
 import { emitDomainEvent } from '../../common/events/emit-domain-event';
-import { BusinessRuleError, ConflictError, NotFoundError } from '../../common/errors/app-error';
-import { calculateDocumentTotals, resolveLine, type ProductForLineResolution } from '../../common/commercial/quotation-line-calculator';
+import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
+import {
+  calculateDocumentTotals,
+  resolveCustomLine,
+  resolveLine,
+  type ProductForLineResolution,
+} from '../../common/commercial/quotation-line-calculator';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
 import { resolveTeamMemberUserIds } from '../../common/teams/team-scope';
 import { PrismaService } from '../../database/prisma.service';
@@ -378,20 +383,47 @@ export class QuotationsService {
     }
   }
 
+  /**
+   * Each item is either a real catalog product (`productId`) or an ad-hoc
+   * line with no catalog product (`customProductName` - mobile Field Sales
+   * Executive scope, SALES.md). Exactly one of the two must be set, and an
+   * ad-hoc line needs an explicit `unitPrice` since there is no product to
+   * default one from.
+   */
   private async resolveItems(items: QuotationItemDto[]) {
-    const productIds = [...new Set(items.map((item) => item.productId))];
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-      include: PRODUCT_LINE_INCLUDE,
-    });
+    for (const item of items) {
+      if (Boolean(item.productId) === Boolean(item.customProductName)) {
+        throw new ValidationError({
+          productId: ['Provide either productId or customProductName, not both.'],
+        });
+      }
+      if (item.customProductName && !item.unitPrice) {
+        throw new ValidationError({
+          unitPrice: ['unitPrice is required for a custom (non-catalog) item.'],
+        });
+      }
+    }
+
+    const productIds = [...new Set(items.flatMap((item) => (item.productId ? [item.productId] : [])))];
+    const products = productIds.length
+      ? await this.prisma.product.findMany({ where: { id: { in: productIds } }, include: PRODUCT_LINE_INCLUDE })
+      : [];
     const byId = new Map(products.map((product) => [product.id, product as ProductForLineResolution]));
 
     return items.map((item) => {
-      const product = byId.get(item.productId);
+      if (item.customProductName) {
+        return resolveCustomLine({
+          customProductName: item.customProductName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice!,
+          discountPercentage: item.discountPercentage,
+        });
+      }
+      const product = byId.get(item.productId!);
       if (!product) {
         throw new NotFoundError(`Product ${item.productId} not found.`);
       }
-      return resolveLine(product, item);
+      return resolveLine(product, { ...item, productId: item.productId! });
     });
   }
 

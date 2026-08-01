@@ -30,8 +30,10 @@ export class SalesReportService {
       this.prisma.quotation.aggregate({ where: quotationWhere, _count: { _all: true }, _sum: { totalAmount: true } }),
       this.prisma.salesOrder.aggregate({ where: salesOrderWhere, _count: { _all: true }, _sum: { totalAmount: true } }),
       this.prisma.salesOrderItem.groupBy({
+        // Ad-hoc line items (no catalog product) can't be attributed to a
+        // product for this ranking - see QuotationItem.productId.
         by: ['productId'],
-        where: { salesOrder: salesOrderWhere },
+        where: { salesOrder: salesOrderWhere, productId: { not: null } },
         _sum: { quantity: true, lineTotal: true },
         orderBy: { _sum: { lineTotal: 'desc' } },
         take: TOP_ROWS_LIMIT,
@@ -46,7 +48,7 @@ export class SalesReportService {
       }),
     ]);
 
-    const productIds = topProductRows.map((row) => row.productId);
+    const productIds = topProductRows.flatMap((row) => (row.productId ? [row.productId] : []));
     const companyIds = topCustomerRows.map((row) => row.customerCompanyId);
     const [products, companies] = await Promise.all([
       this.prisma.product.findMany({ where: { id: { in: productIds } } }),
@@ -64,15 +66,18 @@ export class SalesReportService {
         salesOrderCount: salesOrderAggregate._count._all,
         salesOrderValue: new Prisma.Decimal(salesOrderAggregate._sum.totalAmount ?? 0).toString(),
       },
-      topProducts: topProductRows.map((row) => {
+      topProducts: topProductRows.flatMap((row) => {
+        if (!row.productId) return [];
         const product = productById.get(row.productId);
-        return {
-          productId: row.productId,
-          sku: product?.sku ?? 'Unknown',
-          productName: product?.name ?? 'Unknown product',
-          quantity: new Prisma.Decimal(row._sum.quantity ?? 0).toString(),
-          revenue: new Prisma.Decimal(row._sum.lineTotal ?? 0).toString(),
-        };
+        return [
+          {
+            productId: row.productId,
+            sku: product?.sku ?? 'Unknown',
+            productName: product?.name ?? 'Unknown product',
+            quantity: new Prisma.Decimal(row._sum.quantity ?? 0).toString(),
+            revenue: new Prisma.Decimal(row._sum.lineTotal ?? 0).toString(),
+          },
+        ];
       }),
       topCustomers: topCustomerRows.map((row) => {
         const company = companyById.get(row.customerCompanyId);
