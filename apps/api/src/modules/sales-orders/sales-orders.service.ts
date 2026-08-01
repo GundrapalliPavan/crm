@@ -180,7 +180,13 @@ export class SalesOrdersService {
     const existing = await this.getDetailOrThrow(id);
     this.assertStatus(existing.status, ['draft', 'confirmation_pending'], 'confirmed');
 
-    const stockWarnings = await this.checkStockAvailability(existing.items);
+    // Ad-hoc line items (no catalog product) have no stock to check against
+    // - see QuotationItem.productId. skuSnapshot is set iff productId is
+    // (both null only for an ad-hoc line), so it's safe to assert here too.
+    const cataloguedItems = existing.items.flatMap((item) =>
+      item.productId ? [{ ...item, productId: item.productId, skuSnapshot: item.skuSnapshot! }] : [],
+    );
+    const stockWarnings = await this.checkStockAvailability(cataloguedItems);
 
     const order = await this.prisma.salesOrder.update({
       where: { id },

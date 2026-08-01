@@ -40,15 +40,21 @@ export const SALES_ORDER_STATUSES = [
 ] as const;
 export type SalesOrderStatus = (typeof SALES_ORDER_STATUSES)[number];
 
-/** A commercial line item's snapshot fields describe the product as it was when quoted/ordered, not its current state. */
+/**
+ * A commercial line item's snapshot fields describe the product as it was
+ * when quoted/ordered, not its current state. `productId`/`sku`/`unit` are
+ * null for an ad-hoc line with no catalog product (mobile Field Sales
+ * Executive scope) - `productName` is always populated either way, either
+ * copied from the Product or entered directly as free text.
+ */
 export interface QuotationItem {
   id: string;
-  productId: string;
-  sku: string;
+  productId: string | null;
+  sku: string | null;
   productName: string;
   description: string | null;
   hsnCode: string | null;
-  unit: string;
+  unit: string | null;
   quantity: string;
   unitPrice: string;
   discountPercentage: string;
@@ -59,10 +65,18 @@ export interface QuotationItem {
   sortOrder: number;
 }
 
+/**
+ * Exactly one of `productId` / `customProductName` must be set. A
+ * `customProductName` line is ad-hoc (no catalog product, never written to
+ * the Product table) and requires an explicit `unitPrice` - there's no
+ * product to default one from, and its tax rate is always 0%.
+ */
 export interface CreateQuotationItemRequest {
-  productId: string;
+  productId?: string;
+  /** Free-text product name for an ad-hoc line item with no catalog product. */
+  customProductName?: string;
   quantity: string;
-  /** Defaults to the product's `sellingPriceReference` when omitted. */
+  /** Defaults to the product's `sellingPriceReference` when omitted; required when `customProductName` is set. */
   unitPrice?: string;
   discountPercentage?: string;
 }
@@ -115,14 +129,15 @@ export interface CancelQuotationRequest {
   reason: string;
 }
 
+/** `productId`/`sku`/`unit` are null when copied from an ad-hoc QuotationItem - see QuotationItem. */
 export interface SalesOrderItem {
   id: string;
-  productId: string;
-  sku: string;
+  productId: string | null;
+  sku: string | null;
   productName: string;
   description: string | null;
   hsnCode: string | null;
-  unit: string;
+  unit: string | null;
   quantity: string;
   unitPrice: string;
   discountPercentage: string;

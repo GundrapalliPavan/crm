@@ -112,12 +112,15 @@ export function resolveInvoiceLineFromRequest(
   const split = splitTax(taxableAmount, line.taxRate, line.taxAmount, treatment);
 
   return {
-    productId: line.productId,
-    skuSnapshot: line.skuSnapshot,
+    // Read identity fields from `product` (always real here), not `line`,
+    // whose type is shared with the ad-hoc/custom-item resolver and so
+    // allows null.
+    productId: product.id,
+    skuSnapshot: product.sku,
     productNameSnapshot: line.productNameSnapshot,
     descriptionSnapshot: line.descriptionSnapshot,
     hsnSnapshot: line.hsnSnapshot,
-    unitSnapshot: line.unitSnapshot,
+    unitSnapshot: product.unit.symbol,
     quantity: line.quantity,
     unitPrice: line.unitPrice,
     discountPercentage: line.discountPercentage,

@@ -1058,12 +1058,16 @@ model Quotation {
 model QuotationItem {
   id                  String   @id @default(uuid()) @db.Uuid
   quotationId         String   @map("quotation_id") @db.Uuid
-  productId           String   @map("product_id") @db.Uuid
-  skuSnapshot         String   @map("sku_snapshot") @db.VarChar(80)
+  /// Null for an ad-hoc line item (no catalog product - see resolveItems in
+  /// quotations.service.ts). `productNameSnapshot` is always populated,
+  /// either copied from the Product or entered directly by the Sales
+  /// Executive, and is authoritative for display either way.
+  productId           String?  @map("product_id") @db.Uuid
+  skuSnapshot         String?  @map("sku_snapshot") @db.VarChar(80)
   productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(200)
   descriptionSnapshot String?  @map("description_snapshot")
   hsnSnapshot         String?  @map("hsn_snapshot") @db.VarChar(10)
-  unitSnapshot        String   @map("unit_snapshot") @db.VarChar(20)
+  unitSnapshot        String?  @map("unit_snapshot") @db.VarChar(20)
   quantity            Decimal  @db.Decimal(18, 3)
   unitPrice           Decimal  @map("unit_price") @db.Decimal(18, 4)
   discountPercentage  Decimal  @default(0) @map("discount_percentage") @db.Decimal(5, 2)
@@ -1077,7 +1081,7 @@ model QuotationItem {
   // Cascade is deliberate and limited to this owned child collection
   // (DATABASE.md section 113).
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product   Product?  @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   salesOrderItems SalesOrderItem[]
 
@@ -1135,13 +1139,17 @@ model SalesOrder {
 model SalesOrderItem {
   id                  String   @id @default(uuid()) @db.Uuid
   salesOrderId        String   @map("sales_order_id") @db.Uuid
-  productId           String   @map("product_id") @db.Uuid
+  /// Null for an ad-hoc line item copied from a QuotationItem with no
+  /// catalog product - see QuotationItem.productId. Invoicing requires a
+  /// real product, so a sales order carrying a null-productId item must
+  /// have that line replaced before it can be invoiced (invoices.service.ts).
+  productId           String?  @map("product_id") @db.Uuid
   quotationItemId     String?  @map("quotation_item_id") @db.Uuid
-  skuSnapshot         String   @map("sku_snapshot") @db.VarChar(80)
+  skuSnapshot         String?  @map("sku_snapshot") @db.VarChar(80)
   productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(200)
   descriptionSnapshot String?  @map("description_snapshot")
   hsnSnapshot         String?  @map("hsn_snapshot") @db.VarChar(10)
-  unitSnapshot        String   @map("unit_snapshot") @db.VarChar(20)
+  unitSnapshot        String?  @map("unit_snapshot") @db.VarChar(20)
   quantity            Decimal  @db.Decimal(18, 3)
   unitPrice           Decimal  @map("unit_price") @db.Decimal(18, 4)
   discountPercentage  Decimal  @default(0) @map("discount_percentage") @db.Decimal(5, 2)
@@ -1154,7 +1162,7 @@ model SalesOrderItem {
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   salesOrder    SalesOrder     @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
-  product       Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product       Product?       @relation(fields: [productId], references: [id], onDelete: Restrict)
   quotationItem QuotationItem? @relation(fields: [quotationItemId], references: [id], onDelete: SetNull)
 
   invoiceItems InvoiceItem[]

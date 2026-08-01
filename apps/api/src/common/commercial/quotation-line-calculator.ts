@@ -21,12 +21,12 @@ export interface LineItemRequest {
 }
 
 export interface ResolvedLine {
-  productId: string;
-  skuSnapshot: string;
+  productId: string | null;
+  skuSnapshot: string | null;
   productNameSnapshot: string;
   descriptionSnapshot: string | null;
   hsnSnapshot: string | null;
-  unitSnapshot: string;
+  unitSnapshot: string | null;
   quantity: Prisma.Decimal;
   unitPrice: Prisma.Decimal;
   discountPercentage: Prisma.Decimal;
@@ -88,6 +88,60 @@ export function resolveLine(product: ProductForLineResolution, request: LineItem
     discountPercentage,
     discountAmount,
     taxRate: product.taxRate,
+    taxAmount,
+    lineTotal,
+  };
+}
+
+export interface CustomLineItemRequest {
+  customProductName: string;
+  quantity: string;
+  unitPrice: string;
+  discountPercentage?: string;
+}
+
+/**
+ * An ad-hoc line item with no catalog product (mobile Field Sales Executive
+ * scope - the product name is for reference only and is never written to the
+ * Product table). Same discount/tax math as `resolveLine`, but there is no
+ * product to snapshot sku/hsn/unit from or to read a tax rate from, so tax is
+ * always 0% and `unitPrice` is required rather than defaulted.
+ */
+export function resolveCustomLine(request: CustomLineItemRequest): ResolvedLine {
+  const quantity = new Prisma.Decimal(request.quantity);
+  if (!quantity.isPositive()) {
+    throw new ValidationError({ quantity: ['Quantity must be greater than zero.'] });
+  }
+
+  const unitPrice = new Prisma.Decimal(request.unitPrice);
+  if (unitPrice.isNegative()) {
+    throw new ValidationError({ unitPrice: ['Unit price cannot be negative.'] });
+  }
+
+  const discountPercentage = new Prisma.Decimal(request.discountPercentage ?? 0);
+  if (discountPercentage.lessThan(0) || discountPercentage.greaterThan(100)) {
+    throw new ValidationError({ discountPercentage: ['Discount percentage must be between 0 and 100.'] });
+  }
+
+  const gross = quantity.times(unitPrice);
+  const discountAmount = gross.times(discountPercentage).dividedBy(100).toDecimalPlaces(2);
+  const taxableValue = gross.minus(discountAmount);
+  const taxRate = new Prisma.Decimal(0);
+  const taxAmount = new Prisma.Decimal(0);
+  const lineTotal = taxableValue.plus(taxAmount).toDecimalPlaces(2);
+
+  return {
+    productId: null,
+    skuSnapshot: null,
+    productNameSnapshot: request.customProductName,
+    descriptionSnapshot: null,
+    hsnSnapshot: null,
+    unitSnapshot: null,
+    quantity,
+    unitPrice,
+    discountPercentage,
+    discountAmount,
+    taxRate,
     taxAmount,
     lineTotal,
   };
