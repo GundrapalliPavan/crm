@@ -33,6 +33,10 @@ export const NOTIFICATION_TYPES = [
   'purchase_order_approval_required',
   'payment_received',
   'low_stock',
+  /** Mobile push infrastructure (MOBILE_ARCHITECTURE.md section 9) - notifies the quotation's owner of the sales rep's outcome, not the approver. */
+  'quotation_decided',
+  /** Mobile push infrastructure (MOBILE_ARCHITECTURE.md section 9) - notifies the sales order's owner on confirm/cancel/complete. */
+  'sales_order_status_changed',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -57,4 +61,18 @@ export interface ListNotificationsQuery {
 
 export interface UnreadCountResponse {
   count: number;
+}
+
+/**
+ * Push infrastructure (MOBILE_ARCHITECTURE.md section 9) - one token per
+ * session, registered via `POST /notifications/push-token` once per mobile
+ * login/app-open. Expo Push (one API for iOS+Android) rather than talking to
+ * APNs/FCM directly.
+ */
+export const PUSH_PLATFORMS = ['ios', 'android'] as const;
+export type PushPlatform = (typeof PUSH_PLATFORMS)[number];
+
+export interface RegisterPushTokenRequest {
+  expoPushToken: string;
+  platform: PushPlatform;
 }

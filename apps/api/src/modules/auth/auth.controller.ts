@@ -22,7 +22,11 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { RequestLoginOtpDto } from './dto/request-login-otp.dto';
+import { RequestPhoneChangeDto } from './dto/request-phone-change.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyLoginOtpDto } from './dto/verify-login-otp.dto';
+import { VerifyPhoneChangeDto } from './dto/verify-phone-change.dto';
 import { AuthService } from './services/auth.service';
 import type { DeviceContext } from './services/session.service';
 
@@ -31,6 +35,20 @@ import type { DeviceContext } from './services/session.service';
  * default, since this endpoint is the one an attacker would brute-force.
  */
 const LOGIN_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+
+/**
+ * Phone OTP request rate limit: tighter than the application default to
+ * control SMS cost/abuse, since each call sends a real text message.
+ */
+const PHONE_OTP_THROTTLE = { default: { limit: 3, ttl: 900_000 } };
+
+/**
+ * Login-OTP rate limit, applied to both request and verify: unlike
+ * `phone/verify-otp` (authenticated, already-known account, no throttle
+ * today), `login-otp/verify` is public and a guessable 6-digit code whose
+ * success means a full session - it needs its own brute-force ceiling.
+ */
+const LOGIN_OTP_THROTTLE = { default: { limit: 3, ttl: 900_000 } };
 
 function deviceContextOf(request: Request): DeviceContext {
   return {
@@ -66,10 +84,23 @@ export class AuthController {
       deviceContextOf(request),
     );
 
+    return this.respondWithSession(body, rawRefreshToken, request, response);
+  }
+
+  /**
+   * Shared by every endpoint that issues a fresh session (`login`,
+   * `login-otp/verify`): a native client has no cookie jar, so the raw
+   * refresh token travels in the body exactly once for it to move straight
+   * into secure device storage; a browser gets it exclusively as an
+   * httpOnly cookie.
+   */
+  private respondWithSession(
+    body: LoginResponse,
+    rawRefreshToken: string,
+    request: Request,
+    response: Response,
+  ): LoginResponse {
     if (isMobileClient(request)) {
-      // No cookie jar to put it in, and a mobile app has nowhere else to
-      // get it from - the raw token travels in the body exactly once, for
-      // the caller to move straight into secure device storage.
       return { ...body, refreshToken: rawRefreshToken };
     }
 
@@ -179,5 +210,54 @@ export class AuthController {
       dto.currentPassword,
       dto.newPassword,
     );
+  }
+
+  @Throttle(PHONE_OTP_THROTTLE)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('phone/request-otp')
+  async requestPhoneOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RequestPhoneChangeDto,
+  ): Promise<void> {
+    await this.authService.requestPhoneChange(user.id, dto.newPhone);
+  }
+
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('phone/verify-otp')
+  async verifyPhoneOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyPhoneChangeDto,
+  ): Promise<void> {
+    await this.authService.verifyPhoneChange(user.id, dto.code);
+  }
+
+  @Public()
+  @Throttle(LOGIN_OTP_THROTTLE)
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Post('login-otp/request')
+  async requestLoginOtp(@Body() dto: RequestLoginOtpDto): Promise<{ message: string }> {
+    await this.authService.requestLoginOtp(dto.phone);
+
+    // Same response whether or not the phone matched an active account
+    // (Step 4 section 43 - no user enumeration), mirroring forgot-password.
+    return { message: 'If that phone number is registered, a verification code will be sent.' };
+  }
+
+  @Public()
+  @Throttle(LOGIN_OTP_THROTTLE)
+  @HttpCode(HttpStatus.OK)
+  @Post('login-otp/verify')
+  async verifyLoginOtp(
+    @Body() dto: VerifyLoginOtpDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<LoginResponse> {
+    const { response: body, rawRefreshToken } = await this.authService.verifyLoginOtp(
+      dto.phone,
+      dto.code,
+      deviceContextOf(request),
+    );
+
+    return this.respondWithSession(body, rawRefreshToken, request, response);
   }
 }

@@ -66,21 +66,11 @@ export class JwtAuthGuard implements CanActivate {
       throw new AccountInactiveError();
     }
 
-    const { roles, permissions } = await this.permissionsService.loadRolesAndPermissions(
-      session.user.id,
-    );
-
     request.identity = { userId: session.user.id, sessionId: session.id };
-    request.authenticatedUser = {
-      id: session.user.id,
-      firstName: session.user.firstName,
-      lastName: session.user.lastName,
-      username: session.user.username,
-      email: session.user.email,
-      status: session.user.status,
-      roles,
-      permissions,
-    };
+    // Single construction point (also used by login and every UsersService
+    // read/write) - keeps this in sync with AuthenticatedUser's shape
+    // instead of duplicating it here (Step 4 section 34).
+    request.authenticatedUser = await this.permissionsService.toAuthenticatedUser(session.user);
 
     return true;
   }

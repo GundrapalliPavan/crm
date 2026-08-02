@@ -6,9 +6,11 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { AccountEmailService } from './services/account-email.service';
 import { AuthService } from './services/auth.service';
+import { LoginOtpService } from './services/login-otp.service';
 import { PasswordResetService } from './services/password-reset.service';
 import { PasswordService } from './services/password.service';
 import { PermissionsService } from './services/permissions.service';
+import { PhoneVerificationService } from './services/phone-verification.service';
 import { SessionService } from './services/session.service';
 import { TokenService } from './services/token.service';
 
@@ -32,6 +34,8 @@ import { TokenService } from './services/token.service';
     PasswordService,
     PasswordResetService,
     PermissionsService,
+    PhoneVerificationService,
+    LoginOtpService,
     SessionService,
     TokenService,
     AccountEmailService,

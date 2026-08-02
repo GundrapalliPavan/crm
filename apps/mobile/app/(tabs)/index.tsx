@@ -1,14 +1,33 @@
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDashboard } from '@/features/dashboard/useDashboard';
 
-function StatTile({ label, value }: { label: string; value: string | number }) {
-  return (
-    <View style={styles.tile}>
+function StatTile({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string | number;
+  onPress?: () => void;
+}) {
+  const content = (
+    <>
       <Text style={styles.tileValue}>{value}</Text>
       <Text style={styles.tileLabel}>{label}</Text>
-    </View>
+    </>
   );
+
+  if (onPress) {
+    return (
+      <Pressable style={styles.tile} onPress={onPress}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={styles.tile}>{content}</View>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -76,8 +95,16 @@ export default function DashboardScreen() {
 
         {data.billing && (
           <Section title="Billing">
-            <StatTile label="Total outstanding" value={data.billing.totalOutstanding} />
-            <StatTile label="Overdue invoices" value={data.billing.overdueInvoiceCount} />
+            <StatTile
+              label="Total outstanding"
+              value={data.billing.totalOutstanding}
+              onPress={() => router.push('/billing')}
+            />
+            <StatTile
+              label="Overdue invoices"
+              value={data.billing.overdueInvoiceCount}
+              onPress={() => router.push('/billing')}
+            />
           </Section>
         )}
 

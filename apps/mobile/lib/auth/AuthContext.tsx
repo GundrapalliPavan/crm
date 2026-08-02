@@ -1,4 +1,4 @@
-import type { AuthenticatedUser, LoginRequest } from '@crm/types';
+import type { AuthenticatedUser, ChangePasswordRequest, LoginRequest, VerifyLoginOtpRequest } from '@crm/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './auth-context';
@@ -64,6 +64,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setStatus('authenticated');
   }, []);
 
+  const loginWithOtp = useCallback(async (request: VerifyLoginOtpRequest) => {
+    const currentUser = await authService.loginWithOtp(request);
+    setUser(currentUser);
+    setStatus('authenticated');
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authService.logout();
@@ -73,14 +79,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [queryClient, becomeUnauthenticated]);
 
+  const changePassword = useCallback(async (request: ChangePasswordRequest) => {
+    await authService.changePassword(request);
+  }, []);
+
+  const logoutAll = useCallback(async () => {
+    try {
+      await authService.logoutAll();
+    } finally {
+      queryClient.clear();
+      becomeUnauthenticated();
+    }
+  }, [queryClient, becomeUnauthenticated]);
+
+  const refreshUser = useCallback(async () => {
+    const currentUser = await authService.fetchCurrentUser();
+    setUser(currentUser);
+  }, []);
+
   const can = useCallback(
     (permissionCode: string) => user?.permissions.includes(permissionCode) ?? false,
     [user],
   );
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, login, logout, can }),
-    [status, user, login, logout, can],
+    () => ({ status, user, login, loginWithOtp, logout, changePassword, logoutAll, refreshUser, can }),
+    [status, user, login, loginWithOtp, logout, changePassword, logoutAll, refreshUser, can],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

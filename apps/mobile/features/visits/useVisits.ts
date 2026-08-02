@@ -6,12 +6,21 @@ const visitKeys = {
   all: ['visits'] as const,
   list: (params: ListMyTasksParams) => [...visitKeys.all, 'list', params] as const,
   detail: (id: string) => [...visitKeys.all, 'detail', id] as const,
+  company: (companyId: string) => [...visitKeys.all, 'company', companyId] as const,
 };
 
 export function useMyTasks(params: ListMyTasksParams) {
   return useQuery({
     queryKey: visitKeys.list(params),
     queryFn: () => visitsApi.listMine(params),
+  });
+}
+
+export function useCompanyVisits(companyId: string) {
+  return useQuery({
+    queryKey: visitKeys.company(companyId),
+    queryFn: () => visitsApi.listForCompany(companyId),
+    enabled: Boolean(companyId),
   });
 }
 

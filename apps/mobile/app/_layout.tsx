@@ -46,6 +46,9 @@ function RootLayoutNav() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="login" />
+        <Stack.Screen name="forgot-password" />
+        <Stack.Screen name="login-otp" />
+        <Stack.Screen name="login-otp-verify" />
       </Stack>
     </ThemeProvider>
   );

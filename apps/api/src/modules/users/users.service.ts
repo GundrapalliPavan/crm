@@ -80,7 +80,7 @@ export class UsersService {
    * itself when the recipient completes `POST /auth/accept-invite`.
    */
   async create(dto: CreateUserDto, actorUserId: string): Promise<CreateUserResponse> {
-    await this.assertEmailAndUsernameAvailable(dto.email, dto.username);
+    await this.assertEmailAndUsernameAvailable(dto.email, dto.username, dto.phone);
 
     const user = await this.prisma.user.create({
       data: {
@@ -119,10 +119,16 @@ export class UsersService {
     return { user: await this.permissionsService.toAuthenticatedUser(user) };
   }
 
-  private async assertEmailAndUsernameAvailable(email: string, username: string): Promise<void> {
+  private async assertEmailAndUsernameAvailable(
+    email: string,
+    username: string,
+    phone?: string,
+  ): Promise<void> {
     const existing = await this.prisma.user.findFirst({
-      where: { OR: [{ email: email.toLowerCase() }, { username }] },
-      select: { email: true, username: true },
+      where: {
+        OR: [{ email: email.toLowerCase() }, { username }, ...(phone ? [{ phone }] : [])],
+      },
+      select: { email: true, username: true, phone: true },
     });
 
     if (!existing) {
@@ -131,7 +137,14 @@ export class UsersService {
     if (existing.email === email.toLowerCase()) {
       throw new ConflictError('A user with this email already exists.');
     }
-    throw new ConflictError('This username is already taken.');
+    if (existing.username === username) {
+      throw new ConflictError('This username is already taken.');
+    }
+    // Only phone can remain now - phone was never included in the OR unless
+    // dto.phone was set, so this branch is unreachable otherwise (Prisma's
+    // `phone: String? @unique` also lets login-by-OTP assume the lookup is
+    // unambiguous - see auth.service.ts::requestLoginOtp/verifyLoginOtp).
+    throw new ConflictError('A user with this phone number already exists.');
   }
 
   /**

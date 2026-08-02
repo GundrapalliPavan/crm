@@ -7,6 +7,8 @@ import {
   type PaymentReceivedEvent,
   type PurchaseOrderApprovalRequiredEvent,
   type QuotationApprovalRequiredEvent,
+  type QuotationDecidedEvent,
+  type SalesOrderStatusChangedEvent,
 } from '../../common/events/domain-events';
 import { findUserIdsWithPermission } from '../../common/users/permission-holders';
 import { PrismaService } from '../../database/prisma.service';
@@ -92,5 +94,30 @@ export class NotificationTriggersListener {
         }),
       ),
     );
+  }
+
+  /** No recipient when the quotation has no owner - unlike Payment Received's companyOwnerUserId, Quotation.ownerId is genuinely optional. */
+  @OnEvent(DOMAIN_EVENTS.quotationDecided)
+  async onQuotationDecided(event: QuotationDecidedEvent): Promise<void> {
+    if (!event.ownerId) return;
+    await this.notificationsService.create({
+      userId: event.ownerId,
+      type: 'quotation_decided',
+      title: `Quotation ${event.quotationNumber} was ${event.decision}`,
+      relatedEntityType: 'quotation',
+      relatedEntityId: event.quotationId,
+    });
+  }
+
+  @OnEvent(DOMAIN_EVENTS.salesOrderStatusChanged)
+  async onSalesOrderStatusChanged(event: SalesOrderStatusChangedEvent): Promise<void> {
+    if (!event.ownerId) return;
+    await this.notificationsService.create({
+      userId: event.ownerId,
+      type: 'sales_order_status_changed',
+      title: `Order ${event.salesOrderNumber} is now ${event.status}`,
+      relatedEntityType: 'sales_order',
+      relatedEntityId: event.salesOrderId,
+    });
   }
 }

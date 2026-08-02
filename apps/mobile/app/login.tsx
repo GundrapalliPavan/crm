@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
@@ -131,6 +131,14 @@ export default function LoginScreen() {
               <Text style={styles.buttonText}>Sign in</Text>
             )}
           </Pressable>
+
+          <Pressable onPress={() => router.push('/forgot-password')} style={styles.linkRow}>
+            <Text style={styles.linkText}>Forgot password?</Text>
+          </Pressable>
+
+          <Pressable onPress={() => router.push('/login-otp')} style={styles.linkRow}>
+            <Text style={styles.linkText}>Log in with OTP instead</Text>
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -181,4 +189,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
+  linkRow: { alignItems: 'center', marginTop: 14 },
+  linkText: { color: '#3b5bdb', fontSize: 14, fontWeight: '600' },
 });

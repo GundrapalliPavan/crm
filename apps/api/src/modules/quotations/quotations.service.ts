@@ -256,6 +256,12 @@ export class QuotationsService {
       data: { status: 'accepted' },
       include: QUOTATION_DETAIL_INCLUDE,
     });
+    await emitDomainEvent(this.events, DOMAIN_EVENTS.quotationDecided, {
+      quotationId: quotation.id,
+      quotationNumber: quotation.quotationNumber,
+      decision: 'accepted',
+      ownerId: quotation.ownerId,
+    });
     return toQuotation(quotation);
   }
 
@@ -267,6 +273,12 @@ export class QuotationsService {
       where: { id },
       data: { status: 'rejected' },
       include: QUOTATION_DETAIL_INCLUDE,
+    });
+    await emitDomainEvent(this.events, DOMAIN_EVENTS.quotationDecided, {
+      quotationId: quotation.id,
+      quotationNumber: quotation.quotationNumber,
+      decision: 'rejected',
+      ownerId: quotation.ownerId,
     });
     return toQuotation(quotation);
   }

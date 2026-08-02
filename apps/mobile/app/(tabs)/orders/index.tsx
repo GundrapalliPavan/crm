@@ -13,14 +13,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QUOTATION_STATUSES, SALES_ORDER_STATUSES } from '@crm/types';
-import type { QuotationStatus, QuotationSummary, SalesOrderStatus, SalesOrderSummary } from '@crm/types';
+import type {
+  Company,
+  QuotationStatus,
+  QuotationSummary,
+  SalesOrderStatus,
+  SalesOrderSummary,
+} from '@crm/types';
 import { useQuotationsList } from '@/features/quotations/useQuotations';
 import { quotationStatusColor, quotationStatusLabel } from '@/features/quotations/status';
 import { useSalesOrdersList } from '@/features/sales-orders/useSalesOrders';
 import { salesOrderStatusColor, salesOrderStatusLabel } from '@/features/sales-orders/status';
+import { useCompaniesList } from '@/features/companies/useCompanies';
 import { useAuth } from '@/lib/auth/useAuth';
 
-type Segment = 'quotations' | 'orders';
+type Segment = 'quotations' | 'orders' | 'customers';
 
 function QuotationRow({ quotation }: { quotation: QuotationSummary }) {
   return (
@@ -66,13 +73,32 @@ function SalesOrderRow({ order }: { order: SalesOrderSummary }) {
   );
 }
 
-/** Sales (MOBILE_PRD.md section 7.6) - Quotations (Read/Create) and read-only Orders in one segmented view. */
+function CompanyRow({ company }: { company: Company }) {
+  return (
+    <Pressable
+      style={styles.row}
+      onPress={() => router.push({ pathname: '/orders/customers/[id]', params: { id: company.id } })}
+    >
+      <View style={styles.rowMain}>
+        <Text style={styles.rowTitle}>{company.name}</Text>
+        <Text style={styles.rowSubtitle}>{company.phone ?? company.email ?? 'No contact info'}</Text>
+      </View>
+      <View style={styles.rowBadges}>
+        {company.isCustomer && <Text style={styles.badge}>Customer</Text>}
+        {company.isSupplier && <Text style={styles.badge}>Dealer</Text>}
+      </View>
+    </Pressable>
+  );
+}
+
+/** Sales (MOBILE_PRD.md section 7.6) + Customers & Dealers (section 7.5) in one segmented view. */
 export default function OrdersScreen() {
   const { can } = useAuth();
   const [segment, setSegment] = useState<Segment>('quotations');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<QuotationStatus | undefined>(undefined);
   const [orderStatus, setOrderStatus] = useState<SalesOrderStatus | undefined>(undefined);
+  const [customerSearch, setCustomerSearch] = useState('');
 
   const quotationParams = useMemo(
     () => ({ q: search.trim() || undefined, status, pageSize: 50 }),
@@ -82,6 +108,12 @@ export default function OrdersScreen() {
 
   const orderParams = useMemo(() => ({ status: orderStatus, pageSize: 50 }), [orderStatus]);
   const orders = useSalesOrdersList(orderParams);
+
+  const companyParams = useMemo(
+    () => ({ search: customerSearch.trim() || undefined, pageSize: 50 }),
+    [customerSearch],
+  );
+  const companies = useCompaniesList(companyParams);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -106,6 +138,12 @@ export default function OrdersScreen() {
           onPress={() => setSegment('orders')}
         >
           <Text style={[styles.segmentText, segment === 'orders' && styles.segmentTextActive]}>Orders</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.segment, segment === 'customers' && styles.segmentActive]}
+          onPress={() => setSegment('customers')}
+        >
+          <Text style={[styles.segmentText, segment === 'customers' && styles.segmentTextActive]}>Customers</Text>
         </Pressable>
       </View>
 
@@ -168,7 +206,7 @@ export default function OrdersScreen() {
             />
           )}
         </>
-      ) : (
+      ) : segment === 'orders' ? (
         <>
           <ScrollView
             horizontal
@@ -217,6 +255,43 @@ export default function OrdersScreen() {
               renderItem={({ item }) => <SalesOrderRow order={item} />}
               contentContainerStyle={styles.list}
               refreshControl={<RefreshControl refreshing={orders.isRefetching} onRefresh={() => void orders.refetch()} />}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <TextInput
+            style={styles.search}
+            placeholder="Search customer or dealer"
+            value={customerSearch}
+            onChangeText={setCustomerSearch}
+            autoCapitalize="none"
+          />
+
+          {companies.isLoading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" />
+            </View>
+          ) : companies.isError || !companies.data ? (
+            <View style={styles.centered}>
+              <Text style={styles.errorText}>Unable to load customers. Pull down to try again.</Text>
+            </View>
+          ) : companies.data.data.length === 0 ? (
+            <View style={styles.centered}>
+              <Text style={styles.emptyTitle}>No customers found</Text>
+              <Text style={styles.emptyBody}>
+                {customerSearch ? 'Try a different search.' : 'Customers and dealers will show up here.'}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={companies.data.data}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <CompanyRow company={item} />}
+              contentContainerStyle={styles.list}
+              refreshControl={
+                <RefreshControl refreshing={companies.isRefetching} onRefresh={() => void companies.refetch()} />
+              }
             />
           )}
         </>

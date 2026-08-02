@@ -6,8 +6,10 @@ import request from 'supertest';
 import { APP_CREATE_OPTIONS, configureApp } from '../src/app';
 import { AppModule } from '../src/app.module';
 import { REFRESH_TOKEN_COOKIE_NAME } from '../src/modules/auth/auth.constants';
+import { LoginOtpService } from '../src/modules/auth/services/login-otp.service';
 import { PasswordResetService } from '../src/modules/auth/services/password-reset.service';
 import { PasswordService } from '../src/modules/auth/services/password.service';
+import { PhoneVerificationService } from '../src/modules/auth/services/phone-verification.service';
 import { seedReferenceData } from '../prisma/seed';
 import { testPrisma } from './database/helpers';
 
@@ -27,11 +29,13 @@ describe('Authentication, Users & RBAC (e2e)', () => {
   let app: NestExpressApplication;
   let passwordService: PasswordService;
   let passwordResetService: PasswordResetService;
+  let phoneVerificationService: PhoneVerificationService;
+  let loginOtpService: LoginOtpService;
 
   beforeEach(async () => {
     await testPrisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "audit_logs", "password_reset_tokens", "sessions", ' +
-        '"user_roles", "role_permissions", "users" RESTART IDENTITY CASCADE;',
+      'TRUNCATE TABLE "audit_logs", "password_reset_tokens", "phone_verification_codes", ' +
+        '"login_otp_codes", "sessions", "user_roles", "role_permissions", "users" RESTART IDENTITY CASCADE;',
     );
     // Restores permissions, seeded roles and the Administrator grant that the
     // truncate above just wiped (all upserts - safe to run every test).
@@ -44,6 +48,8 @@ describe('Authentication, Users & RBAC (e2e)', () => {
 
     passwordService = app.get(PasswordService);
     passwordResetService = app.get(PasswordResetService);
+    phoneVerificationService = app.get(PhoneVerificationService);
+    loginOtpService = app.get(LoginOtpService);
   });
 
   afterEach(async () => {
@@ -60,6 +66,7 @@ describe('Authentication, Users & RBAC (e2e)', () => {
       password?: string;
       status?: UserStatus;
       roleName?: string;
+      phone?: string;
     } = {},
   ) {
     const email = options.email ?? `user-${randomUUID()}@example.com`;
@@ -72,6 +79,7 @@ describe('Authentication, Users & RBAC (e2e)', () => {
         email,
         passwordHash,
         status: options.status ?? 'active',
+        phone: options.phone,
       },
     });
 
@@ -484,6 +492,31 @@ describe('Authentication, Users & RBAC (e2e)', () => {
         .send({ firstName: 'E', lastName: 'F', username: 'taken', email: 'different@example.com' })
         .expect(409);
       expect(duplicateUsername.body.error.code).toBe('DUPLICATE_RESOURCE');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/users')
+        .set(auth)
+        .send({
+          firstName: 'G',
+          lastName: 'H',
+          username: 'has-phone',
+          email: 'has-phone@example.com',
+          phone: '+919876500001',
+        })
+        .expect(201);
+
+      const duplicatePhone = await request(app.getHttpServer())
+        .post('/api/v1/users')
+        .set(auth)
+        .send({
+          firstName: 'I',
+          lastName: 'J',
+          username: 'wants-same-phone',
+          email: 'wants-same-phone@example.com',
+          phone: '+919876500001',
+        })
+        .expect(409);
+      expect(duplicatePhone.body.error.code).toBe('DUPLICATE_RESOURCE');
     });
   });
 
@@ -676,6 +709,331 @@ describe('Authentication, Users & RBAC (e2e)', () => {
       }
 
       const response = await login('throttle@example.com', 'wrong-password');
+      expect(response.status).toBe(429);
+    });
+  });
+
+  describe('phone number change (OTP)', () => {
+    async function loginAs(email: string, password: string): Promise<{ id: string; accessToken: string }> {
+      const user = await createUser({ email, password });
+      const loginResponse = await login(email, password).expect(200);
+      return { id: user.id, accessToken: loginResponse.body.accessToken };
+    }
+
+    it('honestly reports failure when the SMS provider is not configured, but still records the code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-request@example.com', 'Str0ngPassphrase!');
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/request-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ newPhone: '+919876543210' });
+
+      // Unlike Communications (best-effort, always 20x - CLAUDE.md section
+      // 31), an OTP has no fallback delivery path, so a failed send must
+      // surface as a real error rather than a silent success.
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe('PROVIDER_UNAVAILABLE');
+
+      const code = await testPrisma.phoneVerificationCode.findFirst({ where: { userId } });
+      expect(code).not.toBeNull();
+      expect(code?.newPhone).toBe('+919876543210');
+      expect(code?.consumedAt).toBeNull();
+    });
+
+    it('verifies a valid code, updates the phone number and consumes the code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-verify@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(204);
+
+      const updated = await testPrisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(updated.phone).toBe('+919876543210');
+
+      const codeRow = await testPrisma.phoneVerificationCode.findFirstOrThrow({ where: { userId } });
+      expect(codeRow.consumedAt).not.toBeNull();
+    });
+
+    it('rejects an incorrect code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-wrong@example.com', 'Str0ngPassphrase!');
+      await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: '000000' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+
+      const updated = await testPrisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(updated.phone).toBeNull();
+    });
+
+    it('rejects an expired code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-expired@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await testPrisma.phoneVerificationCode.updateMany({
+        where: { userId },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(422);
+    });
+
+    it('rejects reusing an already-consumed code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-reuse@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(422);
+    });
+
+    it('invalidates a previous code when a new one is requested', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-superseded@example.com', 'Str0ngPassphrase!');
+      const firstCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+      const secondCode = await phoneVerificationService.generateCode(userId, '+919999999999');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: firstCode })
+        .expect(422);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: secondCode })
+        .expect(204);
+
+      const updated = await testPrisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(updated.phone).toBe('+919999999999');
+    });
+
+    it('records an audit entry for a phone number change', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-audit@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(204);
+
+      const entries = await testPrisma.auditLog.findMany({
+        where: { entityId: userId, action: 'user.phone_changed' },
+      });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].actorUserId).toBe(userId);
+    });
+
+    it('throttles repeated request-otp attempts', async () => {
+      const { accessToken } = await loginAs('phone-throttle@example.com', 'Str0ngPassphrase!');
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/phone/request-otp')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({ newPhone: '+919876543210' })
+          .expect(409);
+      }
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/request-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ newPhone: '+919876543210' });
+
+      expect(response.status).toBe(429);
+    });
+  });
+
+  describe('login via OTP', () => {
+    it('reports the same generic response for a known and an unknown phone number', async () => {
+      await createUser({ email: 'otp-known@example.com', phone: '+919876500010' });
+
+      const known = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/request')
+        .send({ phone: '+919876500010' })
+        .expect(202);
+
+      const unknown = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/request')
+        .send({ phone: '+919876500099' })
+        .expect(202);
+
+      expect(known.body).toEqual(unknown.body);
+    });
+
+    it('creates a code row for a known phone even though the SMS provider is unconfigured', async () => {
+      const user = await createUser({ email: 'otp-row@example.com', phone: '+919876500011' });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/request')
+        .send({ phone: '+919876500011' })
+        .expect(202);
+
+      const code = await testPrisma.loginOtpCode.findFirst({ where: { userId: user.id } });
+      expect(code).not.toBeNull();
+      expect(code?.consumedAt).toBeNull();
+    });
+
+    it('does not create a code row for an unknown phone number', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/request')
+        .send({ phone: '+919876500098' })
+        .expect(202);
+
+      const count = await testPrisma.loginOtpCode.count();
+      expect(count).toBe(0);
+    });
+
+    it('verifies a valid code and logs in, without a password', async () => {
+      const user = await createUser({ email: 'otp-verify@example.com', phone: '+919876500012' });
+      const rawCode = await loginOtpService.generateCode(user.id);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500012', code: rawCode })
+        .expect(200);
+
+      expect(response.body.accessToken).toEqual(expect.any(String));
+      expect(response.body.user.email).toBe('otp-verify@example.com');
+
+      const codeRow = await testPrisma.loginOtpCode.findFirstOrThrow({ where: { userId: user.id } });
+      expect(codeRow.consumedAt).not.toBeNull();
+    });
+
+    it('rejects a wrong code', async () => {
+      const user = await createUser({ email: 'otp-wrong@example.com', phone: '+919876500013' });
+      await loginOtpService.generateCode(user.id);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500013', code: '000000' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects an expired code', async () => {
+      const user = await createUser({ email: 'otp-expired@example.com', phone: '+919876500014' });
+      const rawCode = await loginOtpService.generateCode(user.id);
+
+      await testPrisma.loginOtpCode.updateMany({
+        where: { userId: user.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500014', code: rawCode })
+        .expect(422);
+    });
+
+    it('rejects reusing an already-consumed code', async () => {
+      const user = await createUser({ email: 'otp-reuse@example.com', phone: '+919876500015' });
+      const rawCode = await loginOtpService.generateCode(user.id);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500015', code: rawCode })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500015', code: rawCode })
+        .expect(422);
+    });
+
+    it('rejects an unknown phone with the same generic error as a wrong code', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500097', code: '123456' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects an inactive account only after a valid code, not before', async () => {
+      const user = await createUser({
+        email: 'otp-inactive@example.com',
+        phone: '+919876500016',
+        status: 'inactive',
+      });
+      const rawCode = await loginOtpService.generateCode(user.id);
+
+      const wrongCode = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500016', code: '000000' })
+        .expect(422);
+      expect(wrongCode.body.error.code).toBe('VALIDATION_ERROR');
+
+      const validCode = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500016', code: rawCode })
+        .expect(401);
+      expect(validCode.body.error.code).toBe('ACCOUNT_INACTIVE');
+    });
+
+    it('issues a mobile refresh token in the body instead of a cookie', async () => {
+      const user = await createUser({ email: 'otp-mobile@example.com', phone: '+919876500017' });
+      const rawCode = await loginOtpService.generateCode(user.id);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .set('X-Client-Type', 'mobile')
+        .send({ phone: '+919876500017', code: rawCode })
+        .expect(200);
+
+      expect(response.body.refreshToken).toEqual(expect.any(String));
+      expect(response.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('throttles repeated request-otp attempts', async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/login-otp/request')
+          .send({ phone: '+919876500018' })
+          .expect(202);
+      }
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/request')
+        .send({ phone: '+919876500018' });
+
+      expect(response.status).toBe(429);
+    });
+
+    it('throttles repeated verify-otp attempts', async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/login-otp/verify')
+          .send({ phone: '+919876500019', code: '000000' })
+          .expect(422);
+      }
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login-otp/verify')
+        .send({ phone: '+919876500019', code: '000000' });
+
       expect(response.status).toBe(429);
     });
   });

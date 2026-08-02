@@ -1,21 +1,31 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import type { LoginResponse, RefreshResponse } from '@crm/types';
 import { PrismaService } from '../../../database/prisma.service';
 import { AppConfigService } from '../../../config/app-config.service';
 import { NodeEnv } from '../../../config/env.validation';
 import {
   AccountInactiveError,
+  BusinessRuleError,
+  ConflictError,
   InvalidCredentialsError,
   SessionExpiredError,
   ValidationError,
 } from '../../../common/errors/app-error';
 import { AuditService } from '../../../common/audit/audit.service';
+import {
+  COMMUNICATION_PROVIDER,
+  type CommunicationProvider,
+} from '../../../infrastructure/messaging/communication-provider.interface';
 import { AccountEmailService } from './account-email.service';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordService } from './password.service';
 import { PermissionsService } from './permissions.service';
+import { LoginOtpService } from './login-otp.service';
+import { PhoneVerificationService } from './phone-verification.service';
 import { SessionService, type DeviceContext } from './session.service';
 import { TokenService } from './token.service';
+import { LOGIN_OTP_TTL_MINUTES, PHONE_OTP_TTL_MINUTES } from '../auth.constants';
 
 /** A login/refresh result plus the raw refresh token. For a web request the
  *  controller consumes this only to set the httpOnly cookie and it never
@@ -40,6 +50,9 @@ export class AuthService {
     private readonly tokenService: TokenService,
     private readonly auditService: AuditService,
     private readonly accountEmailService: AccountEmailService,
+    private readonly phoneVerificationService: PhoneVerificationService,
+    private readonly loginOtpService: LoginOtpService,
+    @Inject(COMMUNICATION_PROVIDER) private readonly commsProvider: CommunicationProvider,
   ) {}
 
   /**
@@ -81,6 +94,21 @@ export class AuthService {
       throw new AccountInactiveError();
     }
 
+    return this.issueSession(user, device, 'password');
+  }
+
+  /**
+   * Everything a successful credential check (password or OTP) has in
+   * common: create the session, bump `lastLoginAt`, sign the access token,
+   * and build the response. `method` only affects the log line, so a
+   * password-login-succeeded event is distinguishable from an
+   * OTP-login-succeeded one in security review.
+   */
+  private async issueSession(
+    user: User,
+    device: DeviceContext,
+    method: 'password' | 'otp',
+  ): Promise<IssuedCredentials<LoginResponse>> {
     const { session, rawToken } = await this.sessionService.createSession(user.id, device);
 
     await this.prisma.user.update({
@@ -91,7 +119,7 @@ export class AuthService {
     const accessToken = this.tokenService.signAccessToken({ sub: user.id, sid: session.id });
     const authenticatedUser = await this.permissionsService.toAuthenticatedUser(user);
 
-    this.logger.log({ userId: user.id, sessionId: session.id }, 'Login succeeded');
+    this.logger.log({ userId: user.id, sessionId: session.id, method }, 'Login succeeded');
 
     return {
       response: {
@@ -271,5 +299,137 @@ export class AuthService {
       entityType: 'user',
       entityId: userId,
     });
+  }
+
+  /**
+   * Unlike push notifications or account email (best-effort, silently
+   * logged on failure - CLAUDE.md section 31), SMS is the *entire* delivery
+   * mechanism for an OTP: there is no fallback the user can fall back on, so
+   * a failed send must surface as a real error here, not a silent 202.
+   */
+  async requestPhoneChange(userId: string, newPhone: string): Promise<void> {
+    const rawCode = await this.phoneVerificationService.generateCode(userId, newPhone);
+
+    const result = await this.commsProvider.send({
+      channel: 'sms',
+      recipient: newPhone,
+      messageBody: `Your verification code is ${rawCode}. It expires in ${PHONE_OTP_TTL_MINUTES} minutes.`,
+    });
+
+    if (result.status === 'failed') {
+      throw new BusinessRuleError(
+        'PROVIDER_UNAVAILABLE',
+        `We could not send a verification code: ${result.failureReason ?? 'the SMS provider is unavailable.'}`,
+      );
+    }
+  }
+
+  async verifyPhoneChange(userId: string, rawCode: string): Promise<void> {
+    const validation = await this.phoneVerificationService.validateCode(userId, rawCode);
+
+    if (validation.status !== 'valid') {
+      throw new ValidationError({ code: ['This code is invalid or has expired.'] });
+    }
+
+    // `phone` is unique (login-by-OTP depends on it - see requestLoginOtp/
+    // verifyLoginOtp below) - check before writing so a claimed number
+    // surfaces as a clean error instead of an unhandled constraint violation.
+    const claimedBy = await this.prisma.user.findUnique({
+      where: { phone: validation.code.newPhone },
+      select: { id: true },
+    });
+    if (claimedBy && claimedBy.id !== userId) {
+      throw new ConflictError('This phone number is already in use by another account.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { phone: validation.code.newPhone },
+    });
+    await this.phoneVerificationService.consumeCode(validation.code.id);
+
+    await this.auditService.record({
+      actorUserId: userId,
+      action: 'user.phone_changed',
+      entityType: 'user',
+      entityId: userId,
+    });
+  }
+
+  /**
+   * Always succeeds from the caller's point of view, matching
+   * `forgotPassword`'s no-enumeration shape exactly: whether or not `phone`
+   * matches an active account, the response is identical, and a failed SMS
+   * send is only logged, never thrown - surfacing it here (unauthenticated
+   * caller) would itself confirm the phone is registered. Unlike
+   * `requestPhoneChange` (authenticated - the caller already knows their own
+   * account, so a thrown `PROVIDER_UNAVAILABLE` carries no enumeration risk).
+   */
+  async requestLoginOtp(phone: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { phone } });
+
+    if (!user || user.status !== 'active') {
+      return;
+    }
+
+    const rawCode = await this.loginOtpService.generateCode(user.id);
+
+    const result = await this.commsProvider.send({
+      channel: 'sms',
+      recipient: phone,
+      messageBody: `Your login code is ${rawCode}. It expires in ${LOGIN_OTP_TTL_MINUTES} minutes.`,
+    });
+
+    if (result.status === 'failed') {
+      this.logger.warn(
+        { userId: user.id, failureReason: result.failureReason },
+        'Login OTP SMS send failed',
+      );
+    }
+
+    if (this.config.nodeEnv !== NodeEnv.Production) {
+      this.logger.log(
+        { userId: user.id, devOnlyLoginOtp: rawCode },
+        'DEV ONLY: login OTP code (also sent by SMS, if a provider is configured)',
+      );
+    }
+  }
+
+  /**
+   * An unknown phone and a wrong/expired code produce the identical error -
+   * matching `login()`'s "same error whether the email is unknown or the
+   * password is wrong" no-enumeration principle. `AccountInactiveError` is
+   * the one thing revealed distinctly, and only *after* a valid code -
+   * mirrors `login()` revealing inactive-account status only after a
+   * correct password, safe because the caller has already proven control of
+   * the account by this point.
+   */
+  async verifyLoginOtp(
+    phone: string,
+    rawCode: string,
+    device: DeviceContext,
+  ): Promise<IssuedCredentials<LoginResponse>> {
+    const genericError = () => new ValidationError({ code: ['This code is invalid or has expired.'] });
+
+    const user = await this.prisma.user.findUnique({ where: { phone } });
+
+    if (!user) {
+      throw genericError();
+    }
+
+    const validation = await this.loginOtpService.validateCode(user.id, rawCode);
+
+    if (validation.status !== 'valid') {
+      throw genericError();
+    }
+
+    if (user.status !== 'active') {
+      this.logger.warn({ userId: user.id, status: user.status }, 'Login OTP rejected: inactive account');
+      throw new AccountInactiveError();
+    }
+
+    await this.loginOtpService.consumeCode(validation.code.id);
+
+    return this.issueSession(user, device, 'otp');
   }
 }

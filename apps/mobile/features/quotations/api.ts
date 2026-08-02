@@ -14,6 +14,7 @@ export interface ListQuotationsParams {
   page?: number;
   pageSize?: number;
   status?: QuotationStatus;
+  customerCompanyId?: string;
   q?: string;
 }
 

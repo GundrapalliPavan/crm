@@ -387,7 +387,11 @@ model User {
   /// accounts created before this field existed have none.
   username        String?    @unique @db.VarChar(50)
   email           String     @unique @db.VarChar(255)
-  phone           String?    @db.VarChar(20)
+  /// Unique so a phone number unambiguously identifies one account for
+  /// login-by-OTP (auth.controller.ts POST /auth/login-otp/*) - nullable and
+  /// unique together mean "many accounts with no phone" but "never two
+  /// accounts sharing one".
+  phone           String?    @unique @db.VarChar(20)
   authProviderId  String?    @unique @map("auth_provider_id") @db.VarChar(255)
   /// Argon2id hash. Null for an invited account that has not yet completed
   /// registration, or for a user who only authenticates through a future
@@ -406,6 +410,8 @@ model User {
 
   sessions               Session[]
   passwordResetTokens    PasswordResetToken[]
+  phoneVerificationCodes PhoneVerificationCode[]
+  loginOtpCodes          LoginOtpCode[]
   managedTeams           Team[]               @relation("TeamManager")
   teamMemberships        TeamMember[]
   roles                  UserRole[]
@@ -1598,6 +1604,24 @@ model Notification {
   @@map("notifications")
 }
 
+/// One row per mobile session with push enabled (MOBILE_ARCHITECTURE.md
+/// section 9) - registered via `POST /notifications/push-token`, called
+/// once per login/app-open. Scoped to the session (not the user), matching
+/// how `sessions` already models one row per device: a revoked session's
+/// token simply stops being targeted (the send path joins through
+/// `sessions.revoked_at`) rather than requiring explicit cleanup on logout.
+model PushToken {
+  id            String   @id @default(uuid()) @db.Uuid
+  sessionId     String   @unique @map("session_id") @db.Uuid
+  expoPushToken String   @map("expo_push_token") @db.VarChar(200)
+  platform      String   @db.VarChar(10)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("push_tokens")
+}
+
 /// DATABASE.md section 99. Append-only administrative history, distinct from
 /// LeadActivity (DATABASE.md section 102).
 ///
@@ -1703,9 +1727,10 @@ model Session {
   // user is gone and is not evidence that must survive - it is ephemeral
   // security state, tightly owned by exactly one user (DATABASE.md section 113
   // permits cascade for tightly-owned child records).
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  replacedBy  Session? @relation("SessionRotation", fields: [replacedBySessionId], references: [id], onDelete: SetNull)
-  replacedFor Session? @relation("SessionRotation")
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy  Session?   @relation("SessionRotation", fields: [replacedBySessionId], references: [id], onDelete: SetNull)
+  replacedFor Session?   @relation("SessionRotation")
+  pushToken   PushToken?
 
   @@index([userId])
   @@index([expiresAt])
@@ -1739,4 +1764,54 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+/// Self-service phone number change (Profile > Account Settings > Phone
+/// Number). Proves the caller controls `newPhone` before it replaces
+/// `user.phone` - a 6-digit SMS code rather than PasswordResetToken's long
+/// emailed link, so a dedicated table rather than overloading that one.
+model PhoneVerificationCode {
+  id       String @id @default(uuid()) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  newPhone String @map("new_phone") @db.VarChar(20)
+
+  /// SHA-256 of the 6-digit code. As with sessions/reset tokens, only the hash is stored.
+  codeHash String @map("code_hash") @db.VarChar(64)
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Cascade for the same reason as Session/PasswordResetToken: ephemeral
+  // security state, not business history.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("phone_verification_codes")
+}
+
+/// Login via SMS OTP (auth.controller.ts POST /auth/login-otp/*). Distinct
+/// from PhoneVerificationCode: that table proves ownership of a *new* phone
+/// being saved to the profile; this one proves ownership of the phone
+/// *already on file*, to start a session - a different security-sensitive
+/// operation, kept in its own table rather than blurred into that one.
+model LoginOtpCode {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// SHA-256 of the 6-digit code. As with sessions/reset tokens, only the hash is stored.
+  codeHash String @map("code_hash") @db.VarChar(64)
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Cascade for the same reason as Session/PasswordResetToken: ephemeral
+  // security state, not business history.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("login_otp_codes")
 }

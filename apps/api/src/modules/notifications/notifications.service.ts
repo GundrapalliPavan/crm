@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ApiCollectionResponse, Notification, NotificationType, RelatedEntityType } from '@crm/types';
 import { NotFoundError } from '../../common/errors/app-error';
 import { PrismaService } from '../../database/prisma.service';
+import { PUSH_PROVIDER, type PushProvider } from '../../infrastructure/push/push-provider.interface';
 import { ListNotificationsQuery } from './dto/list-notifications.query';
 import { toNotification } from './notification.mapper';
 
@@ -17,7 +18,10 @@ export interface CreateNotificationParams {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(PUSH_PROVIDER) private readonly pushProvider: PushProvider,
+  ) {}
 
   async list(userId: string, query: ListNotificationsQuery): Promise<ApiCollectionResponse<Notification>> {
     const where: Prisma.NotificationWhereInput = { userId };
@@ -75,7 +79,10 @@ export class NotificationsService {
   /**
    * Called only by domain-event listeners (`NotificationTriggersListener`),
    * never directly by a controller - ARCHITECTURE.md section 77's
-   * "Domain Event -> Notification Service -> In-App Notification".
+   * "Domain Event -> Notification Service -> In-App Notification". The
+   * in-app row is the source of truth; push (MOBILE_ARCHITECTURE.md section
+   * 9) is a second, best-effort delivery channel for the same fact - a
+   * push failure never undoes or blocks the row already written.
    */
   async create(params: CreateNotificationParams): Promise<void> {
     await this.prisma.notification.create({
@@ -87,6 +94,24 @@ export class NotificationsService {
         relatedEntityType: params.relatedEntityType,
         relatedEntityId: params.relatedEntityId,
       },
+    });
+
+    const tokens = await this.prisma.pushToken.findMany({
+      where: { session: { userId: params.userId, revokedAt: null } },
+    });
+    await Promise.allSettled(
+      tokens.map((token) =>
+        this.pushProvider.send({ expoPushToken: token.expoPushToken, title: params.title, body: params.message }),
+      ),
+    );
+  }
+
+  /** `POST /notifications/push-token` - one row per session (MOBILE_ARCHITECTURE.md section 9). */
+  async registerPushToken(sessionId: string, expoPushToken: string, platform: string): Promise<void> {
+    await this.prisma.pushToken.upsert({
+      where: { sessionId },
+      create: { sessionId, expoPushToken, platform },
+      update: { expoPushToken, platform },
     });
   }
 }

@@ -26,6 +26,8 @@ export const API_ERROR_CODES = [
   'PAYLOAD_TOO_LARGE',
   'RATE_LIMITED',
   'INTERNAL_ERROR',
+  /** An external provider (e.g. SMS) the request depends on failed or is unconfigured. */
+  'PROVIDER_UNAVAILABLE',
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

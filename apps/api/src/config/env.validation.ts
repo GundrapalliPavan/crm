@@ -153,6 +153,16 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsEmail({}, { message: 'SENDGRID_FROM_EMAIL must be a valid email address' })
   SENDGRID_FROM_EMAIL?: string;
+
+  /**
+   * Optional Expo push access token (MOBILE_ARCHITECTURE.md section 9) -
+   * raises Expo's push rate limits and unlocks push receipts, but sending
+   * works without it, same degrade-independently precedent as the
+   * Twilio/SendGrid variables above.
+   */
+  @IsOptional()
+  @IsString()
+  EXPO_ACCESS_TOKEN?: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

@@ -32,7 +32,7 @@ describe('Notifications (e2e)', () => {
         '"stock_movements", "inventory_balances", "warehouses", ' +
         '"lead_activities", "follow_ups", "leads", ' +
         '"products", "product_categories", "brands", "contacts", "companies", ' +
-        '"password_reset_tokens", "sessions", "user_roles", "role_permissions", "users" ' +
+        '"push_tokens", "password_reset_tokens", "sessions", "user_roles", "role_permissions", "users" ' +
         'RESTART IDENTITY CASCADE;',
     );
     await seedReferenceData(testPrisma);
@@ -362,6 +362,169 @@ describe('Notifications (e2e)', () => {
         .set(auth())
         .expect(404);
       expect(response.body.error.code).toBe('RESOURCE_NOT_FOUND');
+    });
+  });
+
+  describe('Push token registration', () => {
+    it('registers a token for the current session', async () => {
+      const { auth } = await authedRequest();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/notifications/push-token')
+        .set(auth())
+        .send({ expoPushToken: 'not-a-real-token', platform: 'ios' })
+        .expect(200);
+
+      const tokens = await testPrisma.pushToken.findMany();
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]).toMatchObject({ expoPushToken: 'not-a-real-token', platform: 'ios' });
+    });
+
+    it('upserts by session rather than creating duplicate rows', async () => {
+      const { auth } = await authedRequest();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/notifications/push-token')
+        .set(auth())
+        .send({ expoPushToken: 'token-1', platform: 'ios' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post('/api/v1/notifications/push-token')
+        .set(auth())
+        .send({ expoPushToken: 'token-2', platform: 'android' })
+        .expect(200);
+
+      const tokens = await testPrisma.pushToken.findMany();
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]).toMatchObject({ expoPushToken: 'token-2', platform: 'android' });
+    });
+  });
+
+  describe('Quotation Decided', () => {
+    async function seedCompany() {
+      return testPrisma.company.create({ data: { name: `Customer-${randomUUID()}`, isCustomer: true } });
+    }
+
+    async function seedProduct() {
+      const category = await testPrisma.productCategory.create({ data: { name: `Category-${randomUUID()}` } });
+      const unit = await testPrisma.unit.findFirstOrThrow();
+      return testPrisma.product.create({
+        data: { sku: `SKU-${randomUUID()}`, name: `Product ${randomUUID()}`, categoryId: category.id, unitId: unit.id, taxRate: '18' },
+      });
+    }
+
+    async function createSentQuotation(auth: () => Record<string, string>) {
+      const company = await seedCompany();
+      const product = await seedProduct();
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          quotationDate: '2026-07-27',
+          items: [{ productId: product.id, quantity: '10', unitPrice: '2500.00', discountPercentage: '0' }],
+        })
+        .expect(201);
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${created.body.id}/submit`).set(auth()).expect(200);
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${created.body.id}/send`).set(auth()).expect(200);
+      return created.body;
+    }
+
+    it('notifies the quotation owner (the creator) when accepted', async () => {
+      const { auth } = await authedRequest();
+      const quotation = await createSentQuotation(auth);
+
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${quotation.id}/accept`).set(auth()).expect(200);
+
+      const notifications = await notificationsFor(auth);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'quotation_decided', relatedEntityId: quotation.id });
+    });
+
+    it('notifies the quotation owner when rejected', async () => {
+      const { auth } = await authedRequest();
+      const quotation = await createSentQuotation(auth);
+
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${quotation.id}/reject`).set(auth()).expect(200);
+
+      const notifications = await notificationsFor(auth);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'quotation_decided', relatedEntityId: quotation.id });
+    });
+
+    it('does not notify anyone when the quotation has no owner', async () => {
+      const { auth } = await authedRequest();
+      const quotation = await createSentQuotation(auth);
+      await testPrisma.quotation.update({ where: { id: quotation.id }, data: { ownerId: null } });
+
+      await request(app.getHttpServer()).post(`/api/v1/quotations/${quotation.id}/accept`).set(auth()).expect(200);
+
+      expect(await notificationsFor(auth)).toHaveLength(0);
+    });
+  });
+
+  describe('Sales Order Status Changed', () => {
+    async function seedCompany() {
+      return testPrisma.company.create({ data: { name: `Customer-${randomUUID()}`, isCustomer: true } });
+    }
+
+    async function seedProduct() {
+      const category = await testPrisma.productCategory.create({ data: { name: `Category-${randomUUID()}` } });
+      const unit = await testPrisma.unit.findFirstOrThrow();
+      return testPrisma.product.create({
+        data: { sku: `SKU-${randomUUID()}`, name: `Product ${randomUUID()}`, categoryId: category.id, unitId: unit.id, taxRate: '18' },
+      });
+    }
+
+    async function createSalesOrder(auth: () => Record<string, string>) {
+      const company = await seedCompany();
+      const product = await seedProduct();
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/sales-orders')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          orderDate: '2026-07-27',
+          items: [{ productId: product.id, quantity: '10', unitPrice: '2500.00' }],
+        })
+        .expect(201);
+      return created.body;
+    }
+
+    it('notifies the order owner (the creator) when confirmed', async () => {
+      const { auth } = await authedRequest();
+      const order = await createSalesOrder(auth);
+
+      await request(app.getHttpServer()).post(`/api/v1/sales-orders/${order.id}/confirm`).set(auth()).expect(200);
+
+      const notifications = await notificationsFor(auth);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'sales_order_status_changed', relatedEntityId: order.id });
+    });
+
+    it('notifies the order owner when cancelled', async () => {
+      const { auth } = await authedRequest();
+      const order = await createSalesOrder(auth);
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/sales-orders/${order.id}/cancel`)
+        .set(auth())
+        .send({ reason: 'Customer changed their mind' })
+        .expect(200);
+
+      const notifications = await notificationsFor(auth);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: 'sales_order_status_changed', relatedEntityId: order.id });
+    });
+
+    it('does not notify anyone when the order has no owner', async () => {
+      const { auth } = await authedRequest();
+      const order = await createSalesOrder(auth);
+      await testPrisma.salesOrder.update({ where: { id: order.id }, data: { ownerId: null } });
+
+      await request(app.getHttpServer()).post(`/api/v1/sales-orders/${order.id}/confirm`).set(auth()).expect(200);
+
+      expect(await notificationsFor(auth)).toHaveLength(0);
     });
   });
 });
