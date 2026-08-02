@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { REFRESH_TOKEN_COOKIE_NAME } from '../src/modules/auth/auth.constants';
 import { PasswordResetService } from '../src/modules/auth/services/password-reset.service';
 import { PasswordService } from '../src/modules/auth/services/password.service';
+import { PhoneVerificationService } from '../src/modules/auth/services/phone-verification.service';
 import { seedReferenceData } from '../prisma/seed';
 import { testPrisma } from './database/helpers';
 
@@ -27,10 +28,11 @@ describe('Authentication, Users & RBAC (e2e)', () => {
   let app: NestExpressApplication;
   let passwordService: PasswordService;
   let passwordResetService: PasswordResetService;
+  let phoneVerificationService: PhoneVerificationService;
 
   beforeEach(async () => {
     await testPrisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "audit_logs", "password_reset_tokens", "sessions", ' +
+      'TRUNCATE TABLE "audit_logs", "password_reset_tokens", "phone_verification_codes", "sessions", ' +
         '"user_roles", "role_permissions", "users" RESTART IDENTITY CASCADE;',
     );
     // Restores permissions, seeded roles and the Administrator grant that the
@@ -44,6 +46,7 @@ describe('Authentication, Users & RBAC (e2e)', () => {
 
     passwordService = app.get(PasswordService);
     passwordResetService = app.get(PasswordResetService);
+    phoneVerificationService = app.get(PhoneVerificationService);
   });
 
   afterEach(async () => {
@@ -676,6 +679,158 @@ describe('Authentication, Users & RBAC (e2e)', () => {
       }
 
       const response = await login('throttle@example.com', 'wrong-password');
+      expect(response.status).toBe(429);
+    });
+  });
+
+  describe('phone number change (OTP)', () => {
+    async function loginAs(email: string, password: string): Promise<{ id: string; accessToken: string }> {
+      const user = await createUser({ email, password });
+      const loginResponse = await login(email, password).expect(200);
+      return { id: user.id, accessToken: loginResponse.body.accessToken };
+    }
+
+    it('honestly reports failure when the SMS provider is not configured, but still records the code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-request@example.com', 'Str0ngPassphrase!');
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/request-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ newPhone: '+919876543210' });
+
+      // Unlike Communications (best-effort, always 20x - CLAUDE.md section
+      // 31), an OTP has no fallback delivery path, so a failed send must
+      // surface as a real error rather than a silent success.
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe('PROVIDER_UNAVAILABLE');
+
+      const code = await testPrisma.phoneVerificationCode.findFirst({ where: { userId } });
+      expect(code).not.toBeNull();
+      expect(code?.newPhone).toBe('+919876543210');
+      expect(code?.consumedAt).toBeNull();
+    });
+
+    it('verifies a valid code, updates the phone number and consumes the code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-verify@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(204);
+
+      const updated = await testPrisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(updated.phone).toBe('+919876543210');
+
+      const codeRow = await testPrisma.phoneVerificationCode.findFirstOrThrow({ where: { userId } });
+      expect(codeRow.consumedAt).not.toBeNull();
+    });
+
+    it('rejects an incorrect code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-wrong@example.com', 'Str0ngPassphrase!');
+      await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: '000000' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+
+      const updated = await testPrisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(updated.phone).toBeNull();
+    });
+
+    it('rejects an expired code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-expired@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await testPrisma.phoneVerificationCode.updateMany({
+        where: { userId },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(422);
+    });
+
+    it('rejects reusing an already-consumed code', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-reuse@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(422);
+    });
+
+    it('invalidates a previous code when a new one is requested', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-superseded@example.com', 'Str0ngPassphrase!');
+      const firstCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+      const secondCode = await phoneVerificationService.generateCode(userId, '+919999999999');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: firstCode })
+        .expect(422);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: secondCode })
+        .expect(204);
+
+      const updated = await testPrisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(updated.phone).toBe('+919999999999');
+    });
+
+    it('records an audit entry for a phone number change', async () => {
+      const { accessToken, id: userId } = await loginAs('phone-audit@example.com', 'Str0ngPassphrase!');
+      const rawCode = await phoneVerificationService.generateCode(userId, '+919876543210');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/verify-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: rawCode })
+        .expect(204);
+
+      const entries = await testPrisma.auditLog.findMany({
+        where: { entityId: userId, action: 'user.phone_changed' },
+      });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].actorUserId).toBe(userId);
+    });
+
+    it('throttles repeated request-otp attempts', async () => {
+      const { accessToken } = await loginAs('phone-throttle@example.com', 'Str0ngPassphrase!');
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/phone/request-otp')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({ newPhone: '+919876543210' })
+          .expect(409);
+      }
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/phone/request-otp')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ newPhone: '+919876543210' });
+
       expect(response.status).toBe(429);
     });
   });
