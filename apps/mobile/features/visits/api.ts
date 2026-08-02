@@ -22,6 +22,14 @@ export const visitsApi = {
     return data;
   },
 
+  /** Unlike listMine, this hits the general (non-"me") follow-ups list - org-wide when filtered by companyId. */
+  async listForCompany(companyId: string): Promise<ApiCollectionResponse<FollowUp>> {
+    const { data } = await apiClient.get<ApiCollectionResponse<FollowUp>>('/follow-ups', {
+      params: { companyId, pageSize: 20 },
+    });
+    return data;
+  },
+
   async getById(id: string): Promise<FollowUp> {
     const { data } = await apiClient.get<FollowUp>(`/follow-ups/${id}`);
     return data;
