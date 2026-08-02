@@ -1,4 +1,4 @@
-import { Redirect, Tabs } from 'expo-router';
+import { Redirect, router, Tabs } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import type { ColorValue } from 'react-native';
 import { useAuth } from '@/lib/auth/useAuth';
@@ -59,6 +59,19 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color }) => <TabIcon name="person.crop.circle.fill" color={color} />,
+        }}
+        // Unlike Leads/Orders (where leaving a detail screen open while
+        // switching tabs is useful), Profile is a settings-style tab -
+        // pressing it should always land back on the summary screen, not
+        // wherever its nested stack was left (e.g. Change Password).
+        // React Navigation's default only pops-to-top when the tab is
+        // already focused; this also resets when switching in from another
+        // tab.
+        listeners={{
+          tabPress: (event) => {
+            event.preventDefault();
+            router.navigate('/profile');
+          },
         }}
       />
       {/* Billing (MOBILE_PRD.md 7.7) - reachable only via the Dashboard's stat tiles, not

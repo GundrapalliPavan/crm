@@ -404,9 +404,10 @@ model User {
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   archivedAt      DateTime?  @map("archived_at") @db.Timestamptz(6)
 
-  sessions            Session[]
-  passwordResetTokens PasswordResetToken[]
-  managedTeams        Team[]               @relation("TeamManager")
+  sessions               Session[]
+  passwordResetTokens    PasswordResetToken[]
+  phoneVerificationCodes PhoneVerificationCode[]
+  managedTeams           Team[]               @relation("TeamManager")
   teamMemberships        TeamMember[]
   roles                  UserRole[]
   assignedLeads          Lead[]               @relation("LeadAssignee")
@@ -1758,4 +1759,29 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+/// Self-service phone number change (Profile > Account Settings > Phone
+/// Number). Proves the caller controls `newPhone` before it replaces
+/// `user.phone` - a 6-digit SMS code rather than PasswordResetToken's long
+/// emailed link, so a dedicated table rather than overloading that one.
+model PhoneVerificationCode {
+  id       String @id @default(uuid()) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  newPhone String @map("new_phone") @db.VarChar(20)
+
+  /// SHA-256 of the 6-digit code. As with sessions/reset tokens, only the hash is stored.
+  codeHash String @map("code_hash") @db.VarChar(64)
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Cascade for the same reason as Session/PasswordResetToken: ephemeral
+  // security state, not business history.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("phone_verification_codes")
 }

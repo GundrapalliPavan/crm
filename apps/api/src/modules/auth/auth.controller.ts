@@ -22,7 +22,9 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { RequestPhoneChangeDto } from './dto/request-phone-change.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyPhoneChangeDto } from './dto/verify-phone-change.dto';
 import { AuthService } from './services/auth.service';
 import type { DeviceContext } from './services/session.service';
 
@@ -31,6 +33,12 @@ import type { DeviceContext } from './services/session.service';
  * default, since this endpoint is the one an attacker would brute-force.
  */
 const LOGIN_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+
+/**
+ * Phone OTP request rate limit: tighter than the application default to
+ * control SMS cost/abuse, since each call sends a real text message.
+ */
+const PHONE_OTP_THROTTLE = { default: { limit: 3, ttl: 900_000 } };
 
 function deviceContextOf(request: Request): DeviceContext {
   return {
@@ -179,5 +187,24 @@ export class AuthController {
       dto.currentPassword,
       dto.newPassword,
     );
+  }
+
+  @Throttle(PHONE_OTP_THROTTLE)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('phone/request-otp')
+  async requestPhoneOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RequestPhoneChangeDto,
+  ): Promise<void> {
+    await this.authService.requestPhoneChange(user.id, dto.newPhone);
+  }
+
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('phone/verify-otp')
+  async verifyPhoneOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyPhoneChangeDto,
+  ): Promise<void> {
+    await this.authService.verifyPhoneChange(user.id, dto.code);
   }
 }

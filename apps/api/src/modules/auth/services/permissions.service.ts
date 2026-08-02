@@ -60,7 +60,14 @@ export class PermissionsService {
 
   /** Maps a database user plus resolved access into the API-safe shape. */
   async toAuthenticatedUser(user: User): Promise<AuthenticatedUser> {
-    const { roles, permissions } = await this.loadRolesAndPermissions(user.id);
+    const [{ roles, permissions }, membership] = await Promise.all([
+      this.loadRolesAndPermissions(user.id),
+      this.prisma.teamMember.findFirst({
+        where: { userId: user.id, isActive: true },
+        orderBy: { joinedAt: 'asc' },
+        include: { team: { select: { id: true, name: true } } },
+      }),
+    ]);
 
     return {
       id: user.id,
@@ -68,9 +75,11 @@ export class PermissionsService {
       lastName: user.lastName,
       username: user.username,
       email: user.email,
+      phone: user.phone,
       status: user.status,
       roles,
       permissions,
+      team: membership?.team ?? null,
     };
   }
 }

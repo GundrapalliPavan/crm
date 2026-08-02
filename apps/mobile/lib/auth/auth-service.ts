@@ -1,4 +1,4 @@
-import type { AuthenticatedUser, LoginRequest, LoginResponse, RefreshResponse } from '@crm/types';
+import type { AuthenticatedUser, ChangePasswordRequest, LoginRequest, LoginResponse, RefreshResponse } from '@crm/types';
 import { apiClient } from '@/lib/api/client';
 import { clearStoredRefreshToken, getStoredRefreshToken, setStoredRefreshToken } from './refresh-token-store';
 import { setAccessToken } from './token-store';
@@ -50,6 +50,21 @@ export const authService = {
   async logout(): Promise<void> {
     try {
       await apiClient.post('/auth/logout');
+    } finally {
+      setAccessToken(null);
+      await clearStoredRefreshToken();
+    }
+  },
+
+  /** Revokes every other session but keeps this one signed in - see auth.service.ts's changePassword. */
+  async changePassword(request: ChangePasswordRequest): Promise<void> {
+    await apiClient.post('/auth/change-password', request);
+  },
+
+  /** Revokes every session including this one, so this clears local tokens exactly like logout(). */
+  async logoutAll(): Promise<void> {
+    try {
+      await apiClient.post('/auth/logout-all');
     } finally {
       setAccessToken(null);
       await clearStoredRefreshToken();

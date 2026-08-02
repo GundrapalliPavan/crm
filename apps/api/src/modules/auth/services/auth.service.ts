@@ -1,21 +1,28 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { LoginResponse, RefreshResponse } from '@crm/types';
 import { PrismaService } from '../../../database/prisma.service';
 import { AppConfigService } from '../../../config/app-config.service';
 import { NodeEnv } from '../../../config/env.validation';
 import {
   AccountInactiveError,
+  BusinessRuleError,
   InvalidCredentialsError,
   SessionExpiredError,
   ValidationError,
 } from '../../../common/errors/app-error';
 import { AuditService } from '../../../common/audit/audit.service';
+import {
+  COMMUNICATION_PROVIDER,
+  type CommunicationProvider,
+} from '../../../infrastructure/messaging/communication-provider.interface';
 import { AccountEmailService } from './account-email.service';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordService } from './password.service';
 import { PermissionsService } from './permissions.service';
+import { PhoneVerificationService } from './phone-verification.service';
 import { SessionService, type DeviceContext } from './session.service';
 import { TokenService } from './token.service';
+import { PHONE_OTP_TTL_MINUTES } from '../auth.constants';
 
 /** A login/refresh result plus the raw refresh token. For a web request the
  *  controller consumes this only to set the httpOnly cookie and it never
@@ -40,6 +47,8 @@ export class AuthService {
     private readonly tokenService: TokenService,
     private readonly auditService: AuditService,
     private readonly accountEmailService: AccountEmailService,
+    private readonly phoneVerificationService: PhoneVerificationService,
+    @Inject(COMMUNICATION_PROVIDER) private readonly commsProvider: CommunicationProvider,
   ) {}
 
   /**
@@ -268,6 +277,50 @@ export class AuthService {
     await this.auditService.record({
       actorUserId: userId,
       action: 'user.password_changed',
+      entityType: 'user',
+      entityId: userId,
+    });
+  }
+
+  /**
+   * Unlike push notifications or account email (best-effort, silently
+   * logged on failure - CLAUDE.md section 31), SMS is the *entire* delivery
+   * mechanism for an OTP: there is no fallback the user can fall back on, so
+   * a failed send must surface as a real error here, not a silent 202.
+   */
+  async requestPhoneChange(userId: string, newPhone: string): Promise<void> {
+    const rawCode = await this.phoneVerificationService.generateCode(userId, newPhone);
+
+    const result = await this.commsProvider.send({
+      channel: 'sms',
+      recipient: newPhone,
+      messageBody: `Your verification code is ${rawCode}. It expires in ${PHONE_OTP_TTL_MINUTES} minutes.`,
+    });
+
+    if (result.status === 'failed') {
+      throw new BusinessRuleError(
+        'PROVIDER_UNAVAILABLE',
+        `We could not send a verification code: ${result.failureReason ?? 'the SMS provider is unavailable.'}`,
+      );
+    }
+  }
+
+  async verifyPhoneChange(userId: string, rawCode: string): Promise<void> {
+    const validation = await this.phoneVerificationService.validateCode(userId, rawCode);
+
+    if (validation.status !== 'valid') {
+      throw new ValidationError({ code: ['This code is invalid or has expired.'] });
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { phone: validation.code.newPhone },
+    });
+    await this.phoneVerificationService.consumeCode(validation.code.id);
+
+    await this.auditService.record({
+      actorUserId: userId,
+      action: 'user.phone_changed',
       entityType: 'user',
       entityId: userId,
     });

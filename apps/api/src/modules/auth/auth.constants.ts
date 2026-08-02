@@ -20,6 +20,10 @@ export const PASSWORD_POLICY_MESSAGE =
 /** Password-reset token lifetime (section 44: "finite lifetime"). */
 export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
 
+/** Self-service phone number change (Profile > Account Settings > Phone Number). */
+export const PHONE_OTP_LENGTH = 6;
+export const PHONE_OTP_TTL_MINUTES = 10;
+
 /** Name of the httpOnly cookie carrying the opaque refresh token. */
 export const REFRESH_TOKEN_COOKIE_NAME = 'crm_refresh_token';
 

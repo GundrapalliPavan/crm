@@ -7,6 +7,8 @@
  * session internals (BACKEND.md section 22, Step 4 section 22).
  */
 
+import type { TeamSummary } from './crm';
+
 export interface RoleSummary {
   id: string;
   name: string;
@@ -26,9 +28,12 @@ export interface AuthenticatedUser {
   /** Display handle only - login is always by email. Null for accounts created before this field existed. */
   username: string | null;
   email: string;
+  phone: string | null;
   status: 'active' | 'inactive' | 'suspended';
   roles: RoleSummary[];
   permissions: string[];
+  /** First active team membership, if any - a user may belong to several; this is display-only (e.g. mobile's "Region"). */
+  team: TeamSummary | null;
 }
 
 export interface LoginRequest {
@@ -70,6 +75,15 @@ export interface ResetPasswordRequest {
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
+}
+
+/** Sends a 6-digit code by SMS to `newPhone`, proving the caller controls it before it replaces `user.phone`. */
+export interface RequestPhoneChangeRequest {
+  newPhone: string;
+}
+
+export interface VerifyPhoneChangeRequest {
+  code: string;
 }
 
 export type UserStatus = 'active' | 'inactive' | 'suspended';
