@@ -84,9 +84,52 @@ export interface DashboardFollowUpsSection {
   items: DashboardFollowUpItem[];
 }
 
+export interface DashboardVisitItem {
+  id: string;
+  /** Display name of the lead, contact, or company being visited. */
+  entityLabel: string;
+  leadId: string | null;
+  contactId: string | null;
+  companyId: string | null;
+  scheduledAt: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+}
+
+/** Today's scheduled visits (FollowUp rows with followUpType 'visit') - MOBILE_PRD.md section 7.2. */
+export interface DashboardVisitsSection {
+  items: DashboardVisitItem[];
+}
+
+export type RecentActivityEntityType = 'lead' | 'visit' | 'quotation';
+
+export interface RecentActivityItem {
+  id: string;
+  entityType: RecentActivityEntityType;
+  entityId: string;
+  /** Display name of the lead/customer/quotation the activity relates to. */
+  label: string;
+  /** Short fixed description, e.g. "Lead updated" - not a free-text audit diff. */
+  description: string;
+  occurredAt: string;
+}
+
+/**
+ * A bounded, cheap "what have I been doing" feed assembled from a few
+ * existing per-entity queries scoped to the caller - deliberately not
+ * backed by the admin-only /audit-logs endpoint (different purpose,
+ * different permission gate - see AuditLogEntry in audit.ts) and not a new
+ * generic event/activity-log table (CLAUDE.md section 29).
+ */
+export interface DashboardRecentActivitySection {
+  items: RecentActivityItem[];
+}
+
 /** Only the sections the caller's own permissions unlock are present - API.md section 109-110. */
 export interface DashboardResponse {
   followUps?: DashboardFollowUpsSection;
+  visits?: DashboardVisitsSection;
+  recentActivity?: DashboardRecentActivitySection;
   leads?: DashboardLeadsSection;
   sales?: DashboardSalesSection;
   purchase?: DashboardPurchaseSection;

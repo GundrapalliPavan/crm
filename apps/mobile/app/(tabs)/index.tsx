@@ -1,7 +1,25 @@
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { RecentActivityEntityType } from '@crm/types';
 import { useDashboard } from '@/features/dashboard/useDashboard';
+
+function visitStatusLabel(checkInAt: string | null, checkOutAt: string | null): string {
+  if (checkOutAt) return 'Completed';
+  if (checkInAt) return 'Checked in';
+  return 'Not started';
+}
+
+function recentActivityRoute(entityType: RecentActivityEntityType, entityId: string) {
+  switch (entityType) {
+    case 'lead':
+      return { pathname: '/leads/[id]' as const, params: { id: entityId } };
+    case 'visit':
+      return { pathname: '/visits/[id]' as const, params: { id: entityId } };
+    case 'quotation':
+      return { pathname: '/orders/quotations/[id]' as const, params: { id: entityId } };
+  }
+}
 
 function StatTile({
   label,
@@ -118,6 +136,43 @@ export default function DashboardScreen() {
                   {item.followUpType} - {new Date(item.scheduledAt).toLocaleString()}
                 </Text>
               </View>
+            ))}
+          </View>
+        )}
+
+        {data.visits && data.visits.items.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today&apos;s Visits</Text>
+            {data.visits.items.map((visit) => (
+              <Pressable
+                key={visit.id}
+                style={styles.followUpRow}
+                onPress={() => router.push({ pathname: '/visits/[id]', params: { id: visit.id } })}
+              >
+                <Text style={styles.followUpEntity}>{visit.entityLabel}</Text>
+                <Text style={styles.followUpMeta}>
+                  {new Date(visit.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
+                  {visitStatusLabel(visit.checkInAt, visit.checkOutAt)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {data.recentActivity && data.recentActivity.items.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            {data.recentActivity.items.map((item) => (
+              <Pressable
+                key={`${item.entityType}-${item.id}`}
+                style={styles.followUpRow}
+                onPress={() => router.push(recentActivityRoute(item.entityType, item.entityId))}
+              >
+                <Text style={styles.followUpEntity}>{item.label}</Text>
+                <Text style={styles.followUpMeta}>
+                  {item.description} - {new Date(item.occurredAt).toLocaleString()}
+                </Text>
+              </Pressable>
             ))}
           </View>
         )}

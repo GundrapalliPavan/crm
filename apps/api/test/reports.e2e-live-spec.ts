@@ -117,14 +117,19 @@ describe('Reports (e2e)', () => {
     assignedTo: string;
     scheduledAt: Date;
     status?: 'pending' | 'completed';
+    followUpType?: 'call' | 'meeting' | 'visit' | 'email' | 'whatsapp' | 'other';
+    checkInAt?: Date;
+    checkOutAt?: Date;
   }) {
     return testPrisma.followUp.create({
       data: {
         leadId: options.leadId,
         assignedTo: options.assignedTo,
-        followUpType: 'call',
+        followUpType: options.followUpType ?? 'call',
         scheduledAt: options.scheduledAt,
         status: options.status ?? 'pending',
+        checkInAt: options.checkInAt,
+        checkOutAt: options.checkOutAt,
       },
     });
   }
@@ -157,6 +162,8 @@ describe('Reports (e2e)', () => {
       const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
 
       expect(response.body).toHaveProperty('followUps');
+      expect(response.body).toHaveProperty('visits');
+      expect(response.body).toHaveProperty('recentActivity');
       expect(response.body).toHaveProperty('leads');
       expect(response.body).toHaveProperty('sales');
       expect(response.body).toHaveProperty('purchase');
@@ -164,10 +171,83 @@ describe('Reports (e2e)', () => {
       expect(response.body).toHaveProperty('billing');
     });
 
-    it('omits followUps for an actor without follow_up.read', async () => {
+    it('omits followUps and visits for an actor without follow_up.read', async () => {
       const { auth } = await userWithOnlyPermissions(['lead.read']);
       const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
       expect(response.body).not.toHaveProperty('followUps');
+      expect(response.body).not.toHaveProperty('visits');
+    });
+
+    it('omits recentActivity for an actor with none of lead.read/follow_up.read/quotation.read', async () => {
+      const { auth } = await userWithOnlyPermissions(['inventory.read']);
+      const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
+      expect(response.body).not.toHaveProperty('recentActivity');
+    });
+
+    it('lists only today\'s visits assigned to the actor, excluding other follow-up types and other users\'', async () => {
+      const { auth, user } = await authedRequest();
+      const lead = await seedLead({ assignedTo: user.id });
+      const yesterday = new Date();
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+
+      const todaysVisit = await seedFollowUp({
+        leadId: lead.id,
+        assignedTo: user.id,
+        scheduledAt: new Date(),
+        followUpType: 'visit',
+      });
+      await seedFollowUp({ leadId: lead.id, assignedTo: user.id, scheduledAt: new Date(), followUpType: 'call' }); // not a visit
+      await seedFollowUp({ leadId: lead.id, assignedTo: user.id, scheduledAt: yesterday, followUpType: 'visit' }); // not today
+      const otherUser = await createUser();
+      await seedFollowUp({ leadId: lead.id, assignedTo: otherUser.id, scheduledAt: new Date(), followUpType: 'visit' }); // someone else's
+
+      const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
+
+      expect(response.body.visits.items).toHaveLength(1);
+      expect(response.body.visits.items[0]).toMatchObject({ id: todaysVisit.id, entityLabel: lead.firstName, checkInAt: null, checkOutAt: null });
+    });
+
+    it('assembles recentActivity from my recently-updated leads, completed visits, and created quotations, newest first', async () => {
+      const { auth, user } = await authedRequest();
+      const lead = await seedLead({ assignedTo: user.id });
+      const completedVisit = await seedFollowUp({
+        leadId: lead.id,
+        assignedTo: user.id,
+        scheduledAt: new Date(),
+        followUpType: 'visit',
+        checkInAt: new Date(),
+        checkOutAt: new Date(),
+      });
+      const inProgressVisit = await seedFollowUp({
+        leadId: lead.id,
+        assignedTo: user.id,
+        scheduledAt: new Date(),
+        followUpType: 'visit',
+        checkInAt: new Date(),
+      }); // not checked out - excluded
+
+      const customer = await seedCustomer();
+      const product = await seedProduct();
+      const quotationResponse = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: customer.id,
+          quotationDate: new Date().toISOString().slice(0, 10),
+          items: [{ productId: product.id, quantity: '1', unitPrice: '100' }],
+        })
+        .expect(201);
+
+      const response = await request(app.getHttpServer()).get('/api/v1/dashboard').set(auth()).expect(200);
+
+      const entityIds = response.body.recentActivity.items.map((item: { entityId: string }) => item.entityId);
+      expect(entityIds).toContain(lead.id);
+      expect(entityIds).toContain(completedVisit.id);
+      expect(entityIds).toContain(quotationResponse.body.id);
+      expect(entityIds).not.toContain(inProgressVisit.id);
+
+      const occurredAtValues = response.body.recentActivity.items.map((item: { occurredAt: string }) => item.occurredAt);
+      expect([...occurredAtValues].sort().reverse()).toEqual(occurredAtValues);
     });
 
     it('counts only the actor\'s own pending follow-ups, split into due-today and overdue', async () => {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type InvoiceStatus, type LeadStatus, type PurchaseOrderStatus } from '@prisma/client';
-import type { DashboardResponse } from '@crm/types';
+import type { DashboardResponse, RecentActivityItem } from '@crm/types';
 import { PrismaService } from '../../database/prisma.service';
 
 /** Leads still active in the pipeline - not yet converted or closed out (CRM.md's terminal statuses). */
@@ -69,6 +69,38 @@ export class DashboardService {
           followUpType: item.followUpType,
           scheduledAt: item.scheduledAt.toISOString(),
           isOverdue: item.scheduledAt < todayStart,
+        })),
+      };
+    }
+
+    if (has('follow_up.read')) {
+      const visits = await this.prisma.followUp.findMany({
+        where: { assignedTo: actorId, followUpType: 'visit', scheduledAt: { gte: todayStart, lt: todayEnd } },
+        select: {
+          id: true,
+          leadId: true,
+          contactId: true,
+          companyId: true,
+          scheduledAt: true,
+          checkInAt: true,
+          checkOutAt: true,
+          lead: { select: { firstName: true, lastName: true } },
+          contact: { select: { firstName: true, lastName: true } },
+          company: { select: { name: true } },
+        },
+        orderBy: { scheduledAt: 'asc' },
+      });
+
+      response.visits = {
+        items: visits.map((visit) => ({
+          id: visit.id,
+          entityLabel: entityLabel(visit),
+          leadId: visit.leadId,
+          contactId: visit.contactId,
+          companyId: visit.companyId,
+          scheduledAt: visit.scheduledAt.toISOString(),
+          checkInAt: visit.checkInAt?.toISOString() ?? null,
+          checkOutAt: visit.checkOutAt?.toISOString() ?? null,
         })),
       };
     }
@@ -147,7 +179,92 @@ export class DashboardService {
       };
     }
 
+    if (has('lead.read') || has('follow_up.read') || has('quotation.read')) {
+      response.recentActivity = { items: await this.buildRecentActivity(actorId, has) };
+    }
+
     return response;
+  }
+
+  /**
+   * A bounded, cheap "what have I been doing" feed - three small queries
+   * scoped to the actor, each gated on the same read permission its own
+   * dashboard section already requires. Deliberately not backed by the
+   * admin-only /audit-logs endpoint (different purpose, different
+   * permission gate) and not a new generic event/activity-log table
+   * (CLAUDE.md section 29 - avoid event infrastructure without a
+   * demonstrated requirement).
+   */
+  private async buildRecentActivity(
+    actorId: string,
+    has: (code: string) => boolean,
+  ): Promise<RecentActivityItem[]> {
+    const items: RecentActivityItem[] = [];
+
+    if (has('lead.read')) {
+      const leads = await this.prisma.lead.findMany({
+        where: { assignedTo: actorId },
+        select: { id: true, firstName: true, lastName: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+      });
+      items.push(
+        ...leads.map((lead) => ({
+          id: lead.id,
+          entityType: 'lead' as const,
+          entityId: lead.id,
+          label: [lead.firstName, lead.lastName].filter(Boolean).join(' '),
+          description: 'Lead updated',
+          occurredAt: lead.updatedAt.toISOString(),
+        })),
+      );
+    }
+
+    if (has('follow_up.read')) {
+      const completedVisits = await this.prisma.followUp.findMany({
+        where: { assignedTo: actorId, followUpType: 'visit', checkOutAt: { not: null } },
+        select: {
+          id: true,
+          checkOutAt: true,
+          lead: { select: { firstName: true, lastName: true } },
+          contact: { select: { firstName: true, lastName: true } },
+          company: { select: { name: true } },
+        },
+        orderBy: { checkOutAt: 'desc' },
+        take: 5,
+      });
+      items.push(
+        ...completedVisits.map((visit) => ({
+          id: visit.id,
+          entityType: 'visit' as const,
+          entityId: visit.id,
+          label: entityLabel(visit),
+          description: 'Visit completed',
+          occurredAt: visit.checkOutAt!.toISOString(),
+        })),
+      );
+    }
+
+    if (has('quotation.read')) {
+      const quotations = await this.prisma.quotation.findMany({
+        where: { ownerId: actorId },
+        select: { id: true, quotationNumber: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      });
+      items.push(
+        ...quotations.map((quotation) => ({
+          id: quotation.id,
+          entityType: 'quotation' as const,
+          entityId: quotation.id,
+          label: quotation.quotationNumber,
+          description: 'Quotation created',
+          occurredAt: quotation.createdAt.toISOString(),
+        })),
+      );
+    }
+
+    return items.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 8);
   }
 }
 
