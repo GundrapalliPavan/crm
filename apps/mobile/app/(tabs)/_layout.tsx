@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth/useAuth';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { NotificationBell } from '@/components/NotificationBell';
+import { usePushRegistration } from '@/features/notifications/usePushRegistration';
 
 type IconName = 'house.fill' | 'person.crop.circle.fill' | 'briefcase.fill' | 'map.fill' | 'cart.fill';
 
@@ -22,6 +23,7 @@ function TabIcon({ name, color }: { name: IconName; color: ColorValue }) {
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { status } = useAuth();
+  usePushRegistration();
 
   // Gate the whole tab group on authentication, mirroring apps/web's
   // ProtectedRoute - reaching any tab route while unauthenticated (a
