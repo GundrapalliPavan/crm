@@ -7,5 +7,6 @@ import { CommunicationsService } from './communications.service';
   imports: [MessagingModule],
   controllers: [CommunicationsController],
   providers: [CommunicationsService],
+  exports: [CommunicationsService],
 })
 export class CommunicationsModule {}

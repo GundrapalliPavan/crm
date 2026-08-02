@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { QuotationStatus } from '@crm/types';
+import type { Communication, QuotationStatus } from '@crm/types';
 import {
   useAcceptQuotation,
   useCancelQuotation,
@@ -10,6 +10,7 @@ import {
   useQuotation,
   useRejectQuotation,
   useSendQuotation,
+  useShareQuotation,
   useSubmitQuotation,
 } from '@/features/quotations/useQuotations';
 import { quotationStatusColor, quotationStatusLabel } from '@/features/quotations/status';
@@ -35,9 +36,16 @@ export default function QuotationDetailScreen() {
   const reject = useRejectQuotation(id);
   const cancel = useCancelQuotation(id);
   const convertToOrder = useConvertQuotationToOrder(id);
+  const share = useShareQuotation(id);
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareChannel, setShareChannel] = useState<'whatsapp' | 'email'>('whatsapp');
+  const [shareRecipient, setShareRecipient] = useState('');
+  const [shareRecipientError, setShareRecipientError] = useState<string | null>(null);
+  const [shareResult, setShareResult] = useState<Communication | null>(null);
 
   if (isLoading) {
     return (
@@ -81,9 +89,43 @@ export default function QuotationDetailScreen() {
     }
   }
 
+  function openShareModal() {
+    setShareRecipient('');
+    setShareRecipientError(null);
+    setShareResult(null);
+    setShareModalOpen(true);
+  }
+
+  async function submitShare() {
+    setShareRecipientError(null);
+    try {
+      const result = await share.mutateAsync({
+        channel: shareChannel,
+        recipient: shareRecipient.trim() || undefined,
+      });
+      setShareResult(result);
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : null;
+      if (apiError?.isValidationError) {
+        const [message] = apiError.fieldErrors('recipient');
+        if (message) {
+          setShareRecipientError(message);
+          return;
+        }
+      }
+      Alert.alert('Unable to share', apiError?.message ?? 'Please try again.');
+    }
+  }
+
   const canCancel = can('quotation.update') && OPEN_STATUSES.includes(quotation.status);
   const isBusy =
-    submit.isPending || send.isPending || accept.isPending || reject.isPending || cancel.isPending || convertToOrder.isPending;
+    submit.isPending ||
+    send.isPending ||
+    accept.isPending ||
+    reject.isPending ||
+    cancel.isPending ||
+    convertToOrder.isPending ||
+    share.isPending;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -193,6 +235,11 @@ export default function QuotationDetailScreen() {
               <Text style={styles.actionButtonText}>Convert to Order</Text>
             </Pressable>
           )}
+          {can('quotation.send') && (
+            <Pressable style={styles.actionButton} disabled={isBusy} onPress={openShareModal}>
+              <Text style={styles.actionButtonText}>Share</Text>
+            </Pressable>
+          )}
           {canCancel && (
             <Pressable style={styles.actionButtonMuted} disabled={isBusy} onPress={() => setCancelModalOpen(true)}>
               <Text style={styles.actionButtonMutedText}>Cancel</Text>
@@ -224,6 +271,81 @@ export default function QuotationDetailScreen() {
                 {cancel.isPending ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.modalConfirmText}>Confirm</Text>}
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={shareModalOpen} transparent animationType="slide" onRequestClose={() => setShareModalOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Share Quotation</Text>
+
+            {shareResult ? (
+              <>
+                <View style={shareResult.status === 'failed' ? styles.shareErrorBanner : styles.shareSuccessBanner}>
+                  <Text style={shareResult.status === 'failed' ? styles.shareErrorText : styles.shareSuccessText}>
+                    {shareResult.status === 'failed'
+                      ? `Could not send: ${shareResult.failureReason ?? 'Unknown error'}`
+                      : `Sent to ${shareResult.recipient}.`}
+                  </Text>
+                </View>
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.modalConfirm} onPress={() => setShareModalOpen(false)}>
+                    <Text style={styles.modalConfirmText}>Done</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.shareChannelRow}>
+                  <Pressable
+                    style={[styles.shareChannelOption, shareChannel === 'whatsapp' && styles.shareChannelOptionActive]}
+                    onPress={() => setShareChannel('whatsapp')}
+                  >
+                    <Text
+                      style={[styles.shareChannelText, shareChannel === 'whatsapp' && styles.shareChannelTextActive]}
+                    >
+                      WhatsApp
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.shareChannelOption, shareChannel === 'email' && styles.shareChannelOptionActive]}
+                    onPress={() => setShareChannel('email')}
+                  >
+                    <Text style={[styles.shareChannelText, shareChannel === 'email' && styles.shareChannelTextActive]}>
+                      Email
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  style={[styles.modalInput, shareRecipientError && styles.inputError]}
+                  placeholder={shareChannel === 'whatsapp' ? 'Phone number (optional override)' : 'Email address (optional override)'}
+                  autoCapitalize="none"
+                  keyboardType={shareChannel === 'whatsapp' ? 'phone-pad' : 'email-address'}
+                  value={shareRecipient}
+                  onChangeText={setShareRecipient}
+                />
+                {shareRecipientError ? (
+                  <Text style={styles.fieldError}>{shareRecipientError}</Text>
+                ) : (
+                  <Text style={styles.shareHint}>Leave blank to use the customer&apos;s phone/email on file.</Text>
+                )}
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.modalCancel} onPress={() => setShareModalOpen(false)}>
+                    <Text style={styles.modalCancelText}>Back</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.modalConfirm}
+                    disabled={share.isPending}
+                    onPress={() => void submitShare()}
+                  >
+                    {share.isPending ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.modalConfirmText}>Send</Text>}
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -316,4 +438,23 @@ const styles = StyleSheet.create({
   modalConfirm: { backgroundColor: '#3b5bdb', borderRadius: 8, paddingHorizontal: 18, paddingVertical: 10 },
   modalConfirmDisabled: { opacity: 0.5 },
   modalConfirmText: { color: '#ffffff', fontSize: 14, fontWeight: '600' },
+  shareChannelRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  shareChannelOption: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingVertical: 10,
+  },
+  shareChannelOptionActive: { borderColor: '#3b5bdb', backgroundColor: '#eef2ff' },
+  shareChannelText: { fontSize: 14, fontWeight: '600', color: '#475569' },
+  shareChannelTextActive: { color: '#3b5bdb' },
+  shareHint: { fontSize: 12, color: '#64748b', marginTop: 6 },
+  inputError: { borderColor: '#dc2626' },
+  fieldError: { fontSize: 12, color: '#dc2626', marginTop: 6 },
+  shareSuccessBanner: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 8, padding: 12 },
+  shareSuccessText: { color: '#15803d', fontSize: 13 },
+  shareErrorBanner: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 8, padding: 12 },
+  shareErrorText: { color: '#b91c1c', fontSize: 13 },
 });

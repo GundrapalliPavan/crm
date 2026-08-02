@@ -1,11 +1,13 @@
 import type {
   ApiCollectionResponse,
   CancelQuotationRequest,
+  Communication,
   CreateQuotationRequest,
   Quotation,
   QuotationStatus,
   QuotationSummary,
   SalesOrder,
+  ShareQuotationRequest,
 } from '@crm/types';
 import { apiClient } from '@/lib/api/client';
 
@@ -62,6 +64,11 @@ export const quotationsApi = {
 
   async convertToOrder(id: string): Promise<SalesOrder> {
     const { data } = await apiClient.post<SalesOrder>(`/quotations/${id}/convert-to-order`);
+    return data;
+  },
+
+  async share(id: string, request: ShareQuotationRequest): Promise<Communication> {
+    const { data } = await apiClient.post<Communication>(`/quotations/${id}/share`, request);
     return data;
   },
 };

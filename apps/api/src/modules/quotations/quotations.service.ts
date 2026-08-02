@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
-import type { ApiCollectionResponse, Quotation, QuotationSummary, SalesOrder } from '@crm/types';
+import type { ApiCollectionResponse, Communication, Quotation, QuotationSummary, SalesOrder } from '@crm/types';
 import { AuditService } from '../../common/audit/audit.service';
 import { DOMAIN_EVENTS } from '../../common/events/domain-events';
 import { emitDomainEvent } from '../../common/events/emit-domain-event';
@@ -15,11 +15,13 @@ import {
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
 import { resolveTeamMemberUserIds } from '../../common/teams/team-scope';
 import { PrismaService } from '../../database/prisma.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { SALES_ORDER_DETAIL_INCLUDE, toSalesOrder } from '../sales-orders/sales-order.mapper';
 import { CancelQuotationDto } from './dto/cancel-quotation.dto';
 import { CreateQuotationDto } from './dto/create-quotation.dto';
 import { ListQuotationsQuery } from './dto/list-quotations.query';
 import { QuotationItemDto } from './dto/quotation-item.dto';
+import { ShareQuotationDto } from './dto/share-quotation.dto';
 import { UpdateQuotationDto } from './dto/update-quotation.dto';
 import {
   QUOTATION_DETAIL_INCLUDE,
@@ -38,6 +40,7 @@ export class QuotationsService {
     private readonly numbering: DocumentNumberingService,
     private readonly auditService: AuditService,
     private readonly events: EventEmitter2,
+    private readonly communicationsService: CommunicationsService,
   ) {}
 
   async list(query: ListQuotationsQuery): Promise<ApiCollectionResponse<QuotationSummary>> {
@@ -245,6 +248,47 @@ export class QuotationsService {
       include: QUOTATION_DETAIL_INCLUDE,
     });
     return toQuotation(quotation);
+  }
+
+  /**
+   * MOBILE_PRD.md section 7.6 "Share Quotation" - a text summary sent via
+   * the existing Communications module (Twilio WhatsApp / SendGrid Email),
+   * logged against this quotation like any other message. No PDF - see
+   * ShareQuotationRequest in packages/types/src/sales.ts for why.
+   */
+  async share(id: string, dto: ShareQuotationDto, actorUserId: string): Promise<Communication> {
+    const quotation = await this.getDetailOrThrow(id);
+
+    const [company, contact] = await Promise.all([
+      this.prisma.company.findUnique({
+        where: { id: quotation.customerCompanyId },
+        select: { phone: true, email: true },
+      }),
+      quotation.contactId
+        ? this.prisma.contact.findUnique({ where: { id: quotation.contactId }, select: { phone: true, email: true } })
+        : Promise.resolve(null),
+    ]);
+
+    const recipient = dto.recipient ?? resolveShareRecipient(dto.channel, contact, company);
+    if (!recipient) {
+      throw new ValidationError({
+        recipient: [
+          `No ${dto.channel === 'whatsapp' ? 'phone number' : 'email address'} is on file for this customer. Provide a recipient.`,
+        ],
+      });
+    }
+
+    return this.communicationsService.create(
+      {
+        channel: dto.channel,
+        recipient,
+        subject: dto.channel === 'email' ? `Quotation ${quotation.quotationNumber}` : undefined,
+        messageBody: buildQuotationShareMessage(quotation),
+        relatedEntityType: 'quotation',
+        relatedEntityId: id,
+      },
+      actorUserId,
+    );
   }
 
   async accept(id: string): Promise<Quotation> {
@@ -464,4 +508,28 @@ export class QuotationsService {
 
 function appendNote(existing: string | null, addition: string): string {
   return existing ? `${existing}\n${addition}` : addition;
+}
+
+function resolveShareRecipient(
+  channel: 'whatsapp' | 'email',
+  contact: { phone: string | null; email: string | null } | null,
+  company: { phone: string | null; email: string | null } | null,
+): string | null {
+  const field = channel === 'whatsapp' ? 'phone' : 'email';
+  return contact?.[field] ?? company?.[field] ?? null;
+}
+
+function buildQuotationShareMessage(quotation: QuotationWithDetailRelations): string {
+  const lines = quotation.items
+    .map(
+      (item) =>
+        `- ${item.productNameSnapshot} x ${item.quantity.toString()} @ ${item.unitPrice.toString()} = ${item.lineTotal.toString()}`,
+    )
+    .join('\n');
+
+  return [
+    `Quotation ${quotation.quotationNumber} for ${quotation.customer.name}`,
+    lines,
+    `Total: ${quotation.currencyCode} ${quotation.totalAmount.toString()}`,
+  ].join('\n\n');
 }

@@ -23,7 +23,7 @@ describe('Sales (e2e)', () => {
 
   beforeEach(async () => {
     await testPrisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "audit_logs", "sales_order_items", "sales_orders", "quotation_items", ' +
+      'TRUNCATE TABLE "audit_logs", "communications", "sales_order_items", "sales_orders", "quotation_items", ' +
         '"quotations", "document_sequences", "stock_movements", "inventory_balances", "warehouses", ' +
         '"products", "product_categories", "brands", "contacts", "companies", ' +
         '"password_reset_tokens", "sessions", "user_roles", "role_permissions", "users" ' +
@@ -77,8 +77,10 @@ describe('Sales (e2e)', () => {
     return { user, token, auth: () => ({ Authorization: `Bearer ${token}` }) };
   }
 
-  async function seedCompany() {
-    return testPrisma.company.create({ data: { name: `Customer-${randomUUID()}`, isCustomer: true } });
+  async function seedCompany(options: { phone?: string; email?: string } = {}) {
+    return testPrisma.company.create({
+      data: { name: `Customer-${randomUUID()}`, isCustomer: true, phone: options.phone, email: options.email },
+    });
   }
 
   async function seedProduct(options: { taxRate?: string; sellingPriceReference?: string } = {}) {
@@ -290,6 +292,112 @@ describe('Sales (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post(`/api/v1/quotations/${quotation.id}/approve`)
         .set(auth())
+        .expect(403);
+      expect(response.body.error.code).toBe('PERMISSION_DENIED');
+    });
+  });
+
+  /**
+   * MOBILE_PRD.md section 7.6 - a text summary sent through the existing
+   * Communications module (Twilio WhatsApp / SendGrid Email), not a PDF.
+   * No provider is configured in this test environment, so a successful
+   * request still returns `status: 'failed'` with a clear failureReason
+   * (Communication (e2e)'s own established pattern) - the assertions here
+   * are about the Communication record being created correctly (recipient
+   * resolution, relatedEntityType/Id), not about a real send succeeding.
+   */
+  describe('Share Quotation', () => {
+    it('shares via WhatsApp using the customer company phone on file', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany({ phone: '+911234567890', email: 'company@example.com' });
+      const { quotation } = await createDraftQuotation(auth, { companyId: company.id });
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.id}/share`)
+        .set(auth())
+        .send({ channel: 'whatsapp' })
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        channel: 'whatsapp',
+        recipient: '+911234567890',
+        relatedEntityType: 'quotation',
+        relatedEntityId: quotation.id,
+      });
+      expect(response.body.messageBody).toContain(quotation.quotationNumber);
+    });
+
+    it('prefers the contact phone/email over the company when both are on file', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany({ phone: '+911111111111', email: 'company@example.com' });
+      const contact = await testPrisma.contact.create({
+        data: {
+          firstName: 'Priya',
+          lastName: 'Sharma',
+          companyId: company.id,
+          phone: '+912222222222',
+          email: 'contact@example.com',
+        },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/quotations')
+        .set(auth())
+        .send({
+          customerCompanyId: company.id,
+          contactId: contact.id,
+          quotationDate: '2026-07-27',
+          items: [{ customProductName: 'Cable Drum', quantity: '1', unitPrice: '100' }],
+        })
+        .expect(201);
+
+      const shareResponse = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${response.body.id}/share`)
+        .set(auth())
+        .send({ channel: 'email' })
+        .expect(201);
+
+      expect(shareResponse.body.recipient).toBe('contact@example.com');
+    });
+
+    it('uses an explicit recipient override instead of the one on file', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany({ phone: '+911234567890' });
+      const { quotation } = await createDraftQuotation(auth, { companyId: company.id });
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.id}/share`)
+        .set(auth())
+        .send({ channel: 'whatsapp', recipient: '+919999999999' })
+        .expect(201);
+
+      expect(response.body.recipient).toBe('+919999999999');
+    });
+
+    it('rejects sharing when no recipient is on file and none is provided', async () => {
+      const { auth } = await authedRequest();
+      const company = await seedCompany();
+      const { quotation } = await createDraftQuotation(auth, { companyId: company.id });
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.id}/share`)
+        .set(auth())
+        .send({ channel: 'email' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('denies sharing without the quotation.send permission', async () => {
+      const admin = await authedRequest();
+      const company = await seedCompany({ phone: '+911234567890' });
+      const { quotation } = await createDraftQuotation(admin.auth, { companyId: company.id });
+
+      const { auth } = await authedRequest('Inventory Manager');
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/quotations/${quotation.id}/share`)
+        .set(auth())
+        .send({ channel: 'whatsapp' })
         .expect(403);
       expect(response.body.error.code).toBe('PERMISSION_DENIED');
     });

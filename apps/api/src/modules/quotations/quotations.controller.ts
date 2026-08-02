@@ -1,10 +1,18 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
-import type { ApiCollectionResponse, AuthenticatedUser, Quotation, QuotationSummary, SalesOrder } from '@crm/types';
+import type {
+  ApiCollectionResponse,
+  AuthenticatedUser,
+  Communication,
+  Quotation,
+  QuotationSummary,
+  SalesOrder,
+} from '@crm/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CancelQuotationDto } from './dto/cancel-quotation.dto';
 import { CreateQuotationDto } from './dto/create-quotation.dto';
 import { ListQuotationsQuery } from './dto/list-quotations.query';
+import { ShareQuotationDto } from './dto/share-quotation.dto';
 import { UpdateQuotationDto } from './dto/update-quotation.dto';
 import { QuotationsService } from './quotations.service';
 
@@ -76,6 +84,17 @@ export class QuotationsController {
   @Post(':id/send')
   send(@Param('id', ParseUUIDPipe) id: string): Promise<Quotation> {
     return this.quotationsService.send(id);
+  }
+
+  @RequirePermission('quotation.send')
+  @HttpCode(HttpStatus.CREATED)
+  @Post(':id/share')
+  share(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ShareQuotationDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<Communication> {
+    return this.quotationsService.share(id, dto, actor.id);
   }
 
   @RequirePermission('quotation.update')

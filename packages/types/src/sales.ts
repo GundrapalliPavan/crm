@@ -7,11 +7,14 @@
  * confirmation with a non-blocking stock check, cancellation, completion).
  * "Opportunity" is not a separate entity here - the schema has no Opportunity
  * model, so it is simply a Lead at `status: 'opportunity'` (see crm.ts).
- * Price Lists, customer-specific pricing, quotation versioning, PDF/
- * WhatsApp/Email sending, real credit-check against outstanding balance, and
+ * Price Lists, customer-specific pricing, quotation versioning, PDF
+ * generation, real credit-check against outstanding balance, and
  * partial-availability/backorder workflows are explicitly deferred - none
  * are backed by the schema yet, or depend on a module (Billing, Inventory's
- * Fulfilment tier) that does not exist.
+ * Fulfilment tier) that does not exist. Sharing a quotation as a text
+ * summary via WhatsApp/Email is in scope - see ShareQuotationRequest, which
+ * rides the existing Communication infrastructure (communication.ts)
+ * rather than a new one.
  */
 
 import type { CompanySummary, ContactSummary, UserSummary } from './crm';
@@ -127,6 +130,12 @@ export type UpdateQuotationRequest = Partial<Omit<CreateQuotationRequest, 'items
 
 export interface CancelQuotationRequest {
   reason: string;
+}
+
+/** Text-summary share via the existing Communication infrastructure - see communication.ts. No `sms`: a commercial document is shared via WhatsApp or Email only. */
+export interface ShareQuotationRequest {
+  channel: 'whatsapp' | 'email';
+  recipient?: string;
 }
 
 /** `productId`/`sku`/`unit` are null when copied from an ad-hoc QuotationItem - see QuotationItem. */

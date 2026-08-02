@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CancelQuotationRequest, CreateQuotationRequest } from '@crm/types';
+import type { CancelQuotationRequest, CreateQuotationRequest, ShareQuotationRequest } from '@crm/types';
 import { quotationsApi, type ListQuotationsParams } from './api';
 
 const quotationKeys = {
@@ -78,5 +78,12 @@ export function useConvertQuotationToOrder(id: string) {
       void queryClient.invalidateQueries({ queryKey: quotationKeys.all });
       void queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
     },
+  });
+}
+
+/** Sharing doesn't change the quotation's own status, so unlike the actions above there's nothing to invalidate. */
+export function useShareQuotation(id: string) {
+  return useMutation({
+    mutationFn: (request: ShareQuotationRequest) => quotationsApi.share(id, request),
   });
 }
