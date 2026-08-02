@@ -54,6 +54,10 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <TabIcon name="person.crop.circle.fill" color={color} />,
         }}
       />
+      {/* Billing (MOBILE_PRD.md 7.7) - reachable only via the Dashboard's stat tiles, not
+          its own bottom tab; href: null keeps it in the Tabs navigator (tab bar chrome,
+          push/back) without adding a 6th tab button. */}
+      <Tabs.Screen name="billing" options={{ href: null, title: 'Billing' }} />
     </Tabs>
   );
 }
