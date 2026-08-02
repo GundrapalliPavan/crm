@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import type {
   ApiCollectionResponse,
@@ -13,6 +14,8 @@ import {
   resolveLine,
   type ProductForLineResolution,
 } from '../../common/commercial/quotation-line-calculator';
+import { DOMAIN_EVENTS } from '../../common/events/domain-events';
+import { emitDomainEvent } from '../../common/events/emit-domain-event';
 import { BusinessRuleError, NotFoundError } from '../../common/errors/app-error';
 import { DocumentNumberingService } from '../../common/documents/document-numbering.service';
 import { resolveTeamMemberUserIds } from '../../common/teams/team-scope';
@@ -38,6 +41,7 @@ export class SalesOrdersService {
     private readonly prisma: PrismaService,
     private readonly numbering: DocumentNumberingService,
     private readonly auditService: AuditService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async list(query: ListSalesOrdersQuery): Promise<ApiCollectionResponse<SalesOrderSummary>> {
@@ -200,6 +204,12 @@ export class SalesOrdersService {
       entityId: id,
       metadata: { stockWarningCount: stockWarnings.length },
     });
+    await emitDomainEvent(this.events, DOMAIN_EVENTS.salesOrderStatusChanged, {
+      salesOrderId: order.id,
+      salesOrderNumber: order.salesOrderNumber,
+      status: order.status,
+      ownerId: order.ownerId,
+    });
 
     return { salesOrder: toSalesOrder(order), stockWarnings };
   }
@@ -228,6 +238,12 @@ export class SalesOrdersService {
       entityId: id,
       metadata: { reason: dto.reason },
     });
+    await emitDomainEvent(this.events, DOMAIN_EVENTS.salesOrderStatusChanged, {
+      salesOrderId: order.id,
+      salesOrderNumber: order.salesOrderNumber,
+      status: order.status,
+      ownerId: order.ownerId,
+    });
     return toSalesOrder(order);
   }
 
@@ -250,6 +266,12 @@ export class SalesOrdersService {
       action: 'sales_order.completed',
       entityType: 'sales_order',
       entityId: id,
+    });
+    await emitDomainEvent(this.events, DOMAIN_EVENTS.salesOrderStatusChanged, {
+      salesOrderId: order.id,
+      salesOrderNumber: order.salesOrderNumber,
+      status: order.status,
+      ownerId: order.ownerId,
     });
     return toSalesOrder(order);
   }

@@ -12,6 +12,8 @@ export const DOMAIN_EVENTS = {
   purchaseOrderApprovalRequired: 'purchase_order.approval_required',
   paymentReceived: 'payment.received',
   lowStock: 'inventory.low_stock',
+  quotationDecided: 'quotation.decided',
+  salesOrderStatusChanged: 'sales_order.status_changed',
 } as const;
 
 export interface LeadAssignedEvent {
@@ -41,4 +43,20 @@ export interface LowStockEvent {
   productName: string;
   warehouseId: string;
   warehouseName: string;
+}
+
+/** MOBILE_ARCHITECTURE.md section 9 - notifies the quotation's owner (the sales rep), not the approver. */
+export interface QuotationDecidedEvent {
+  quotationId: string;
+  quotationNumber: string;
+  decision: 'accepted' | 'rejected';
+  ownerId: string | null;
+}
+
+/** MOBILE_ARCHITECTURE.md section 9 - fired on confirm/cancel/complete. */
+export interface SalesOrderStatusChangedEvent {
+  salesOrderId: string;
+  salesOrderNumber: string;
+  status: string;
+  ownerId: string | null;
 }

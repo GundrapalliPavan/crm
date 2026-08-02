@@ -88,4 +88,8 @@ export class AppConfigService {
   get sendGridFromEmail(): string | undefined {
     return this.config.get('SENDGRID_FROM_EMAIL', { infer: true });
   }
+
+  get expoAccessToken(): string | undefined {
+    return this.config.get('EXPO_ACCESS_TOKEN', { infer: true });
+  }
 }

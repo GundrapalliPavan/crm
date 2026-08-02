@@ -1,7 +1,9 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import type { ApiCollectionResponse, AuthenticatedUser, Notification, UnreadCountResponse } from '@crm/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ListNotificationsQuery } from './dto/list-notifications.query';
+import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 import { NotificationsService } from './notifications.service';
 
 /**
@@ -38,5 +40,12 @@ export class NotificationsController {
   @Post('read-all')
   markAllRead(@CurrentUser() actor: AuthenticatedUser): Promise<void> {
     return this.notificationsService.markAllRead(actor.id);
+  }
+
+  /** MOBILE_ARCHITECTURE.md section 9 - called once per mobile login/app-open, upserted by session. */
+  @HttpCode(HttpStatus.OK)
+  @Post('push-token')
+  registerPushToken(@Body() dto: RegisterPushTokenDto, @Req() request: Request): Promise<void> {
+    return this.notificationsService.registerPushToken(request.identity!.sessionId, dto.expoPushToken, dto.platform);
   }
 }

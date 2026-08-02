@@ -404,9 +404,9 @@ model User {
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   archivedAt      DateTime?  @map("archived_at") @db.Timestamptz(6)
 
-  sessions               Session[]
-  passwordResetTokens    PasswordResetToken[]
-  managedTeams           Team[]               @relation("TeamManager")
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  managedTeams        Team[]               @relation("TeamManager")
   teamMemberships        TeamMember[]
   roles                  UserRole[]
   assignedLeads          Lead[]               @relation("LeadAssignee")
@@ -1598,6 +1598,24 @@ model Notification {
   @@map("notifications")
 }
 
+/// One row per mobile session with push enabled (MOBILE_ARCHITECTURE.md
+/// section 9) - registered via `POST /notifications/push-token`, called
+/// once per login/app-open. Scoped to the session (not the user), matching
+/// how `sessions` already models one row per device: a revoked session's
+/// token simply stops being targeted (the send path joins through
+/// `sessions.revoked_at`) rather than requiring explicit cleanup on logout.
+model PushToken {
+  id            String   @id @default(uuid()) @db.Uuid
+  sessionId     String   @unique @map("session_id") @db.Uuid
+  expoPushToken String   @map("expo_push_token") @db.VarChar(200)
+  platform      String   @db.VarChar(10)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("push_tokens")
+}
+
 /// DATABASE.md section 99. Append-only administrative history, distinct from
 /// LeadActivity (DATABASE.md section 102).
 ///
@@ -1703,9 +1721,10 @@ model Session {
   // user is gone and is not evidence that must survive - it is ephemeral
   // security state, tightly owned by exactly one user (DATABASE.md section 113
   // permits cascade for tightly-owned child records).
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  replacedBy  Session? @relation("SessionRotation", fields: [replacedBySessionId], references: [id], onDelete: SetNull)
-  replacedFor Session? @relation("SessionRotation")
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy  Session?   @relation("SessionRotation", fields: [replacedBySessionId], references: [id], onDelete: SetNull)
+  replacedFor Session?   @relation("SessionRotation")
+  pushToken   PushToken?
 
   @@index([userId])
   @@index([expiresAt])
