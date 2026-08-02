@@ -4,6 +4,7 @@ import type { ColorValue } from 'react-native';
 import { useAuth } from '@/lib/auth/useAuth';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { NotificationBell } from '@/components/NotificationBell';
 
 type IconName = 'house.fill' | 'person.crop.circle.fill' | 'briefcase.fill' | 'map.fill' | 'cart.fill';
 
@@ -33,7 +34,11 @@ export default function TabLayout() {
     <Tabs screenOptions={{ tabBarActiveTintColor: Colors[colorScheme].tint }}>
       <Tabs.Screen
         name="index"
-        options={{ title: 'Dashboard', tabBarIcon: ({ color }) => <TabIcon name="house.fill" color={color} /> }}
+        options={{
+          title: 'Dashboard',
+          tabBarIcon: ({ color }) => <TabIcon name="house.fill" color={color} />,
+          headerRight: () => <NotificationBell />,
+        }}
       />
       <Tabs.Screen
         name="leads"
@@ -58,6 +63,7 @@ export default function TabLayout() {
           its own bottom tab; href: null keeps it in the Tabs navigator (tab bar chrome,
           push/back) without adding a 6th tab button. */}
       <Tabs.Screen name="billing" options={{ href: null, title: 'Billing' }} />
+      <Tabs.Screen name="notifications" options={{ href: null, title: 'Notifications' }} />
     </Tabs>
   );
 }
