@@ -24,6 +24,10 @@ export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
 export const PHONE_OTP_LENGTH = 6;
 export const PHONE_OTP_TTL_MINUTES = 10;
 
+/** Login via SMS OTP - deliberately separate constants from PHONE_OTP_*, even though the values match today, since the two flows are unrelated. */
+export const LOGIN_OTP_LENGTH = 6;
+export const LOGIN_OTP_TTL_MINUTES = 10;
+
 /** Name of the httpOnly cookie carrying the opaque refresh token. */
 export const REFRESH_TOKEN_COOKIE_NAME = 'crm_refresh_token';
 

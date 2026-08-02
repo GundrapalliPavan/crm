@@ -86,6 +86,17 @@ export interface VerifyPhoneChangeRequest {
   code: string;
 }
 
+/** Sends a 6-digit login code by SMS to `phone`, if it matches an active account - the response is identical either way (no user enumeration). */
+export interface RequestLoginOtpRequest {
+  phone: string;
+}
+
+/** On success, the response is a `LoginResponse` - the same shape password login returns. */
+export interface VerifyLoginOtpRequest {
+  phone: string;
+  code: string;
+}
+
 export type UserStatus = 'active' | 'inactive' | 'suspended';
 
 export interface CreateUserRequest {

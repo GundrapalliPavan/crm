@@ -15,48 +15,32 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@/lib/api/api-error';
 import { useAuth } from '@/lib/auth/useAuth';
-import { loginSchema, type LoginFormValues } from '@/features/auth/schemas/login.schema';
+import { authService } from '@/lib/auth/auth-service';
+import { loginOtpPhoneSchema, type LoginOtpPhoneFormValues } from '@/features/auth/schemas/login-otp.schema';
 
-/**
- * The mobile equivalent of apps/web/src/features/auth/LoginPage.tsx -
- * deliberately plain, no marketing layout, matching MOBILE_PRD.md's product
- * principle of a fast, focused tool rather than a decorated screen.
- */
-export default function LoginScreen() {
-  const { status, login } = useAuth();
+/** Phone-entry step of login-by-OTP. Mirrors (tabs)/profile/phone-number.tsx's navigation to a verify step. */
+export default function LoginOtpScreen() {
+  const { status } = useAuth();
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
     control,
     handleSubmit,
-    setError,
     formState: { errors, isSubmitting },
-  } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
+  } = useForm<LoginOtpPhoneFormValues>({ resolver: zodResolver(loginOtpPhoneSchema) });
 
-  // Reaching /login while already signed in (e.g. a stale deep link) - leave
-  // immediately rather than showing a form there is nothing to submit.
   if (status === 'authenticated') {
     return <Redirect href="/(tabs)" />;
   }
 
-  async function onSubmit(values: LoginFormValues) {
+  async function onSubmit(values: LoginOtpPhoneFormValues) {
     setFormError(null);
 
     try {
-      await login(values);
+      await authService.requestLoginOtp({ phone: values.phone });
+      router.push({ pathname: '/login-otp-verify', params: { phone: values.phone } });
     } catch (error) {
       const apiError = error instanceof ApiError ? error : null;
-
-      if (apiError?.isValidationError) {
-        for (const field of ['email', 'password'] as const) {
-          const [message] = apiError.fieldErrors(field);
-          if (message) {
-            setError(field, { message });
-          }
-        }
-        return;
-      }
-
       setFormError(apiError?.message ?? 'Something went wrong. Please try again.');
     }
   }
@@ -68,8 +52,8 @@ export default function LoginScreen() {
         style={styles.container}
       >
         <View style={styles.card}>
-          <Text style={styles.title}>Electrical Distribution CRM</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+          <Text style={styles.title}>Log In with OTP</Text>
+          <Text style={styles.subtitle}>Enter your registered phone number to receive a login code.</Text>
 
           {formError && (
             <View style={styles.errorBanner}>
@@ -78,17 +62,17 @@ export default function LoginScreen() {
           )}
 
           <View style={styles.field}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Phone Number</Text>
             <Controller
               control={control}
-              name="email"
+              name="phone"
               render={({ field: { onChange, onBlur, value } }) => (
                 <TextInput
-                  style={[styles.input, errors.email && styles.inputError]}
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  keyboardType="email-address"
-                  textContentType="emailAddress"
+                  style={[styles.input, errors.phone && styles.inputError]}
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
+                  placeholder="+91XXXXXXXXXX"
                   value={value ?? ''}
                   onChangeText={onChange}
                   onBlur={onBlur}
@@ -96,28 +80,7 @@ export default function LoginScreen() {
                 />
               )}
             />
-            {errors.email && <Text style={styles.fieldError}>{errors.email.message}</Text>}
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <Controller
-              control={control}
-              name="password"
-              render={({ field: { onChange, onBlur, value } }) => (
-                <TextInput
-                  style={[styles.input, errors.password && styles.inputError]}
-                  secureTextEntry
-                  autoComplete="current-password"
-                  textContentType="password"
-                  value={value ?? ''}
-                  onChangeText={onChange}
-                  onBlur={onBlur}
-                  editable={!isSubmitting}
-                />
-              )}
-            />
-            {errors.password && <Text style={styles.fieldError}>{errors.password.message}</Text>}
+            {errors.phone && <Text style={styles.fieldError}>{errors.phone.message}</Text>}
           </View>
 
           <Pressable
@@ -125,19 +88,11 @@ export default function LoginScreen() {
             onPress={() => void handleSubmit(onSubmit)()}
             disabled={isSubmitting}
           >
-            {isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign in</Text>
-            )}
+            {isSubmitting ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>Send Code</Text>}
           </Pressable>
 
-          <Pressable onPress={() => router.push('/forgot-password')} style={styles.linkRow}>
-            <Text style={styles.linkText}>Forgot password?</Text>
-          </Pressable>
-
-          <Pressable onPress={() => router.push('/login-otp')} style={styles.linkRow}>
-            <Text style={styles.linkText}>Log in with OTP instead</Text>
+          <Pressable onPress={() => router.back()} style={styles.backLink}>
+            <Text style={styles.backLinkText}>Back to sign in</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -189,6 +144,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  linkRow: { alignItems: 'center', marginTop: 14 },
-  linkText: { color: '#3b5bdb', fontSize: 14, fontWeight: '600' },
+  backLink: { alignItems: 'center', marginTop: 16 },
+  backLinkText: { color: '#3b5bdb', fontSize: 14, fontWeight: '600' },
 });

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import type { LoginResponse, RefreshResponse } from '@crm/types';
 import { PrismaService } from '../../../database/prisma.service';
 import { AppConfigService } from '../../../config/app-config.service';
@@ -6,6 +7,7 @@ import { NodeEnv } from '../../../config/env.validation';
 import {
   AccountInactiveError,
   BusinessRuleError,
+  ConflictError,
   InvalidCredentialsError,
   SessionExpiredError,
   ValidationError,
@@ -19,10 +21,11 @@ import { AccountEmailService } from './account-email.service';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordService } from './password.service';
 import { PermissionsService } from './permissions.service';
+import { LoginOtpService } from './login-otp.service';
 import { PhoneVerificationService } from './phone-verification.service';
 import { SessionService, type DeviceContext } from './session.service';
 import { TokenService } from './token.service';
-import { PHONE_OTP_TTL_MINUTES } from '../auth.constants';
+import { LOGIN_OTP_TTL_MINUTES, PHONE_OTP_TTL_MINUTES } from '../auth.constants';
 
 /** A login/refresh result plus the raw refresh token. For a web request the
  *  controller consumes this only to set the httpOnly cookie and it never
@@ -48,6 +51,7 @@ export class AuthService {
     private readonly auditService: AuditService,
     private readonly accountEmailService: AccountEmailService,
     private readonly phoneVerificationService: PhoneVerificationService,
+    private readonly loginOtpService: LoginOtpService,
     @Inject(COMMUNICATION_PROVIDER) private readonly commsProvider: CommunicationProvider,
   ) {}
 
@@ -90,6 +94,21 @@ export class AuthService {
       throw new AccountInactiveError();
     }
 
+    return this.issueSession(user, device, 'password');
+  }
+
+  /**
+   * Everything a successful credential check (password or OTP) has in
+   * common: create the session, bump `lastLoginAt`, sign the access token,
+   * and build the response. `method` only affects the log line, so a
+   * password-login-succeeded event is distinguishable from an
+   * OTP-login-succeeded one in security review.
+   */
+  private async issueSession(
+    user: User,
+    device: DeviceContext,
+    method: 'password' | 'otp',
+  ): Promise<IssuedCredentials<LoginResponse>> {
     const { session, rawToken } = await this.sessionService.createSession(user.id, device);
 
     await this.prisma.user.update({
@@ -100,7 +119,7 @@ export class AuthService {
     const accessToken = this.tokenService.signAccessToken({ sub: user.id, sid: session.id });
     const authenticatedUser = await this.permissionsService.toAuthenticatedUser(user);
 
-    this.logger.log({ userId: user.id, sessionId: session.id }, 'Login succeeded');
+    this.logger.log({ userId: user.id, sessionId: session.id, method }, 'Login succeeded');
 
     return {
       response: {
@@ -312,6 +331,17 @@ export class AuthService {
       throw new ValidationError({ code: ['This code is invalid or has expired.'] });
     }
 
+    // `phone` is unique (login-by-OTP depends on it - see requestLoginOtp/
+    // verifyLoginOtp below) - check before writing so a claimed number
+    // surfaces as a clean error instead of an unhandled constraint violation.
+    const claimedBy = await this.prisma.user.findUnique({
+      where: { phone: validation.code.newPhone },
+      select: { id: true },
+    });
+    if (claimedBy && claimedBy.id !== userId) {
+      throw new ConflictError('This phone number is already in use by another account.');
+    }
+
     await this.prisma.user.update({
       where: { id: userId },
       data: { phone: validation.code.newPhone },
@@ -324,5 +354,82 @@ export class AuthService {
       entityType: 'user',
       entityId: userId,
     });
+  }
+
+  /**
+   * Always succeeds from the caller's point of view, matching
+   * `forgotPassword`'s no-enumeration shape exactly: whether or not `phone`
+   * matches an active account, the response is identical, and a failed SMS
+   * send is only logged, never thrown - surfacing it here (unauthenticated
+   * caller) would itself confirm the phone is registered. Unlike
+   * `requestPhoneChange` (authenticated - the caller already knows their own
+   * account, so a thrown `PROVIDER_UNAVAILABLE` carries no enumeration risk).
+   */
+  async requestLoginOtp(phone: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { phone } });
+
+    if (!user || user.status !== 'active') {
+      return;
+    }
+
+    const rawCode = await this.loginOtpService.generateCode(user.id);
+
+    const result = await this.commsProvider.send({
+      channel: 'sms',
+      recipient: phone,
+      messageBody: `Your login code is ${rawCode}. It expires in ${LOGIN_OTP_TTL_MINUTES} minutes.`,
+    });
+
+    if (result.status === 'failed') {
+      this.logger.warn(
+        { userId: user.id, failureReason: result.failureReason },
+        'Login OTP SMS send failed',
+      );
+    }
+
+    if (this.config.nodeEnv !== NodeEnv.Production) {
+      this.logger.log(
+        { userId: user.id, devOnlyLoginOtp: rawCode },
+        'DEV ONLY: login OTP code (also sent by SMS, if a provider is configured)',
+      );
+    }
+  }
+
+  /**
+   * An unknown phone and a wrong/expired code produce the identical error -
+   * matching `login()`'s "same error whether the email is unknown or the
+   * password is wrong" no-enumeration principle. `AccountInactiveError` is
+   * the one thing revealed distinctly, and only *after* a valid code -
+   * mirrors `login()` revealing inactive-account status only after a
+   * correct password, safe because the caller has already proven control of
+   * the account by this point.
+   */
+  async verifyLoginOtp(
+    phone: string,
+    rawCode: string,
+    device: DeviceContext,
+  ): Promise<IssuedCredentials<LoginResponse>> {
+    const genericError = () => new ValidationError({ code: ['This code is invalid or has expired.'] });
+
+    const user = await this.prisma.user.findUnique({ where: { phone } });
+
+    if (!user) {
+      throw genericError();
+    }
+
+    const validation = await this.loginOtpService.validateCode(user.id, rawCode);
+
+    if (validation.status !== 'valid') {
+      throw genericError();
+    }
+
+    if (user.status !== 'active') {
+      this.logger.warn({ userId: user.id, status: user.status }, 'Login OTP rejected: inactive account');
+      throw new AccountInactiveError();
+    }
+
+    await this.loginOtpService.consumeCode(validation.code.id);
+
+    return this.issueSession(user, device, 'otp');
   }
 }

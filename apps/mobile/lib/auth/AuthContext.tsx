@@ -1,4 +1,4 @@
-import type { AuthenticatedUser, ChangePasswordRequest, LoginRequest } from '@crm/types';
+import type { AuthenticatedUser, ChangePasswordRequest, LoginRequest, VerifyLoginOtpRequest } from '@crm/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './auth-context';
@@ -64,6 +64,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setStatus('authenticated');
   }, []);
 
+  const loginWithOtp = useCallback(async (request: VerifyLoginOtpRequest) => {
+    const currentUser = await authService.loginWithOtp(request);
+    setUser(currentUser);
+    setStatus('authenticated');
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authService.logout();
@@ -97,8 +103,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   );
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, login, logout, changePassword, logoutAll, refreshUser, can }),
-    [status, user, login, logout, changePassword, logoutAll, refreshUser, can],
+    () => ({ status, user, login, loginWithOtp, logout, changePassword, logoutAll, refreshUser, can }),
+    [status, user, login, loginWithOtp, logout, changePassword, logoutAll, refreshUser, can],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
